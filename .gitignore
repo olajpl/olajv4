@@ -7,78 +7,97 @@
 .DS_Store
 Thumbs.db
 
-# === Composer ===
-vendor/
-composer.lock
+# === Systemowe / śmieci edytorów ===
+*.~undo-tree~
+*.orig
+*.rej
+*~
+*.old
 
-# === Node/npm (jeśli używasz do frontendu) ===
-node_modules/
-dist/
-build/
+# === Archiwa / binarki testowe ===
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+*.exe
+*.dll
+
+# === Composer ===
+/vendor/                 # vendor zawsze z composer install
+# APLIKACJA → TRZYMAJ composer.lock w repo dla powtarzalności!
+# (jeśli kiedyś budujemy bibliotekę – wtedy lock ignorujemy)
+# composer.lock
+
+# === Node / Frontend ===
+/node_modules/
+/dist/
+/build/
+/public/build/
+*.map
 
 # === IDE / edytory ===
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
+.nbproject/
 
-# === System plików ===
-*.~undo-tree~
-*.orig
-*.rej
-
-# === Uploady / dane lokalne ===
-uploads/
-!uploads/.gitkeep         # zostaw pusty plik by nie zgubić folderu
+# === Uploady / dane lokalne (root + app-specific) ===
+/uploads/
+!uploads/.gitkeep
+panel/uploads/
+sklep/uploads/
+panel/public/uploads/
+sklep/public/uploads/
 
 # === Sesje / cache / tmp ===
-includes/session_data/
-session/
-cache/
-temp/
+/includes/session_data/
+/session/
+/cache/
+/temp/
+/tmp/
+/storage/
+panel/storage/
+sklep/storage/
 
 # === Baza danych / dumpy lokalne ===
 *.sql
 *.sqlite
 *.db
 
-# === Dotenv / konfiguracje środowiskowe ===
+# === Dotenv / konfiguracje środowiskowe (wszystkie miejsca) ===
 .env
 .env.*
 .env.local.php
+panel/.env
+panel/.env.*
+sklep/.env
+sklep/.env.*
 
-# === XAMPP / MAMP / lokalne ścieżki ===
-xampp/
-htdocs_old/
-htdocs_bak/
-old/
-backup/
+# === Lokalne XAMPP / backupy katalogów ===
+/xampp/
+/htdocs_old/
+/htdocs_bak/
+/old/
+/backup/
 
 # === Logi projektu ===
-logs/
-log/
+/logs/
+/log/
 *.log.php
 
-# === Frontend build (jeśli Tailwind, Vue, React) ===
-public/build/
-resources/css/
-resources/js/
-resources/sass/
+# === Frontend (frameworkowe źródła – jeśli budujesz gdzie indziej) ===
+/resources/css/
+/resources/js/
+/resources/sass/
 
-# === Lokalny debug ===
-_debug/
+# === Debug lokalny ===
+/_debug/
 debug.log
-debug/
+/debug/
 
-# === Pliki tymczasowe — backupy edytorów ===
-*~
-*.tmp
-*.temp
-*.bak
-*.old
-# secrets
+# === SECRETS — pewniaki w projekcie ===
 /includes/db.php
-sklep/includes/db.php
 panel/includes/db.php
-.env
-.env.*
+sklep/includes/db.php
