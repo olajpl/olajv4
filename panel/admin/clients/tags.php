@@ -1,7 +1,7 @@
 <?php
 // admin/clients/tags.php — Zarządzanie tagami klientów
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+require_once __DIR__ . '/../../../includes/db.php';
 require_once __DIR__ . '/../../layout/layout_header.php';
 
 session_start();

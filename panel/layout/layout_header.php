@@ -161,8 +161,8 @@ function isActive(string $href, string $currentPath): bool
       </div>
 
       <?php
-      $items = require __DIR__ . '/../includes/sidebar_items.php';
-      include __DIR__ . '/../includes/sidebar_renderer.php';
+      $items = require __DIR__ . '/../../includes/sidebar_items.php';
+      include __DIR__ . '/../../includes/sidebar_renderer.php';
       ?>
 
       <a href="/auth/logout.php" class="block py-2 px-3 rounded-md text-red-400 mt-2 mb-6 hover:bg-gray-800 transition">

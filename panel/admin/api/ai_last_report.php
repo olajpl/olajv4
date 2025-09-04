@@ -2,8 +2,7 @@
 // admin/api/ai_last_report.php — zwraca ostatni raport AI (owner-safe, JSON clean)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../bootstrap.php'
 
 // Nagłówek ustawiamy od razu, zanim cokolwiek potencjalnie wypluje output
 header('Content-Type: application/json; charset=utf-8');

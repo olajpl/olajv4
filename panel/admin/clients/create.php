@@ -1,7 +1,7 @@
 <?php
 // admin/clients/create.php
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+require_once __DIR__ . '/../../../includes/db.php';
 
 session_start();
 

@@ -2,8 +2,8 @@
 // admin/clients/index.php — V4: lista klientów (stabilne sortowanie, DISTINCT, paginacja)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+require_once __DIR__ . '/../../../includes/db.php';
 
 $owner_id = (int)($_SESSION['user']['owner_id'] ?? 0);
 if ($owner_id <= 0) {

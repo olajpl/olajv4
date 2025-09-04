@@ -1,0 +1,2 @@
+➡️ Wywołano sendMessengerMessage(703311839531468, 23934739002878727, res)
+➡️ Wywołano sendMessengerMessage(703311839531468, 23934739002878727, hej)

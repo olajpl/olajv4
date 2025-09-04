@@ -1,7 +1,7 @@
 <?php
 // admin/clients/edit.php
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+require_once __DIR__ . '/../../../includes/db.php';
 
 $pdo = $pdo ?? ($db ?? null);
 if (!$pdo) {
