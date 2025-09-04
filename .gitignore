@@ -76,3 +76,9 @@ debug/
 *.temp
 *.bak
 *.old
+# secrets
+/includes/db.php
+sklep/includes/db.php
+panel/includes/db.php
+.env
+.env.*
