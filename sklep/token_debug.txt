@@ -1,0 +1,331 @@
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 
+🔹 TOKEN: 
+🔹 TOKEN: 
+🔹 TOKEN: 
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: f184168b3419b7aff70fdecdd8328053
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: f184168b3419b7aff70fdecdd8328053
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: f184168b3419b7aff70fdecdd8328053
+🟦 clients.token → 
+🟨 order_groups.checkout_token → Array
+(
+    [id] => 3
+    [owner_id] => 1
+    [master_client_id] => 
+    [token] => olaj9453
+    [name] => Klient olaj9453
+    [email] => 
+    [phone] => 
+    [last_seen] => 
+    [registered_at] => 2025-07-30 23:21:09
+)
+
+✅ Użyty klient_id: 3
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → 
+🔹 TOKEN: 6c8b198b7bd8179b4547e772dcf525c3
+🟦 clients.token → 
+🟨 order_groups.checkout_token → 
+🔹 TOKEN: 

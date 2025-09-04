@@ -1,0 +1,78 @@
+# === PHP / Apache ===
+*.log
+*.cache
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# === Composer ===
+vendor/
+composer.lock
+
+# === Node/npm (jeśli używasz do frontendu) ===
+node_modules/
+dist/
+build/
+
+# === IDE / edytory ===
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# === System plików ===
+*.~undo-tree~
+*.orig
+*.rej
+
+# === Uploady / dane lokalne ===
+uploads/
+!uploads/.gitkeep         # zostaw pusty plik by nie zgubić folderu
+
+# === Sesje / cache / tmp ===
+includes/session_data/
+session/
+cache/
+temp/
+
+# === Baza danych / dumpy lokalne ===
+*.sql
+*.sqlite
+*.db
+
+# === Dotenv / konfiguracje środowiskowe ===
+.env
+.env.*
+.env.local.php
+
+# === XAMPP / MAMP / lokalne ścieżki ===
+xampp/
+htdocs_old/
+htdocs_bak/
+old/
+backup/
+
+# === Logi projektu ===
+logs/
+log/
+*.log.php
+
+# === Frontend build (jeśli Tailwind, Vue, React) ===
+public/build/
+resources/css/
+resources/js/
+resources/sass/
+
+# === Lokalny debug ===
+_debug/
+debug.log
+debug/
+
+# === Pliki tymczasowe — backupy edytorów ===
+*~
+*.tmp
+*.temp
+*.bak
+*.old

@@ -1,0 +1,11 @@
+:root {
+  --theme-color: #ec4899; /* można nadpisać przez owner_settings */
+  --accent-color: #f472b6;
+  --bg: #f3f4f6;
+  --text: #111827;
+  --card: #ffffff;
+}
+body { background: var(--bg); color: var(--text); }
+.btn-main { background: var(--theme-color); }
+.product-card { background: var(--card); border-radius: 0.75rem; }
+a:hover { color: var(--theme-color); }

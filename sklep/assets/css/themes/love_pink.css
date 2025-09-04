@@ -1,0 +1,11 @@
+:root{
+  --theme-color:#ff3b9d;
+  --accent-color:#ffc2dd;
+  --bg:#fff5fa;
+  --text:#43122b;
+  --card:#ffffff;
+}
+body{ background:var(--bg); color:var(--text); }
+.btn-main{ background:var(--theme-color); }
+.product-card{ background:var(--card); border:1px solid #ffd3e8; box-shadow:0 6px 18px rgba(255,59,157,.15); }
+a:hover{ color:var(--theme-color); }
