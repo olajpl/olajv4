@@ -1,0 +1,13 @@
+Array
+(
+    [__initialized] => 1
+    [last_activity] => 1755899915
+    [user] => Array
+        (
+            [id] => 4
+            [owner_id] => 1
+            [role] => superadmin
+            [email] => borowik.marek@gmail.com
+        )
+
+)

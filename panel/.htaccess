@@ -1,0 +1,25 @@
+# 👉 Podstawowe reguły dostępu
+Options -Indexes
+DirectoryIndex index.php index.html
+
+# 👉 Zezwól na dostęp do /uploads/
+<IfModule mod_alias.c>
+    RedirectMatch 403 ^/uploads/\.ht
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(webp|jpg|jpeg|png|gif)$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+</IfModule>
+
+# 👉 Włącz mod_rewrite
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Można dodać routing jeśli kiedyś użyjesz np. front controllera
+    # RewriteCond %{REQUEST_FILENAME} !-f
+    # RewriteCond %{REQUEST_FILENAME} !-d
+    # RewriteRule ^ index.php [QSA,L]
+</IfModule>

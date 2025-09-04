@@ -1,0 +1,57 @@
+📦 Moduły i ich hasła:
+Zamówienia i statusy (orders):
+#olajpl_zamówienia_i_statusy_orders
+
+Selektywna faktura/paragon (order_items):
+#olajpl_selektywna_faktura_paragon_order_items
+
+Punkty lojalnościowe (client_loyalty_points):
+#olajpl_punkty_lojalnościowe_client_loyalty_points
+
+Kampanie sprzedażowe (campaigns, campaign_products):
+#olajpl_kampanie_sprzedażowe_campaigns_campaign_products
+
+Kalendarz wydarzeń (events):
+#olajpl_kalendarz_wydarzeń_events
+
+Notatki i przypomnienia (internal_notes, reminders):
+#olajpl_notatki_i_przypomnienia_internal_notes_reminders
+
+Rekomendacje i historia oglądania (product_views, product_relations):
+#olajpl_rekomendacje_i_historia_oglądania_product_views_product_relations
+
+Kody rabatowe (discount_codes, discount_usages):
+#olajpl_kody_rabatowe_discount_codes_discount_usages
+
+Opinie produktów (product_reviews):
+#olajpl_opinie_produktów_product_reviews
+
+Zwroty produktów (returns, return_items):
+#olajpl_zwroty_produktów_returns_return_items
+
+Lokalizacje magazynowe (stock_locations, product_location_links):
+#olajpl_lokalizacje_magazynowe_stock_locations_product_location_links
+
+Callbacki klientów (client_callbacks):
+#olajpl_callbacki_klientów_client_callbacks
+
+Eksperymenty A/B (experiments, experiment_results):
+#olajpl_eksperymenty_a_b_experiments_experiment_results
+
+CRON GUI i scheduler (cron_jobs):
+#olajpl_cron_gui_i_scheduler_cron_jobs
+
+Logi aktywności (client_activity_log, admin_activity_log):
+#olajpl_logi_aktywności_client_activity_log_admin_activity_log
+
+Powiadomienia panelowe (admin_notifications):
+#olajpl_powiadomienia_panelowe_admin_notifications
+
+Segmenty klientów (client_groups, client_segments):
+#olajpl_segmenty_klientów_client_groups_client_segments
+
+Historia zmian (change_log):
+#olajpl_historia_zmian_change_log
+
+Rozszerzenia magazynowe (stock_movements, inventory_log):
+#olajpl_rozszerzenia_magazynowe_stock_movements_inventory_log

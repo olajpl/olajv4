@@ -1,0 +1,18 @@
+^XA
+^CI28
+^PW256
+^LL200
+^LH0,0
+
+^FX Kod produktu (mniejsza czcionka ze względu na wysokość etykiety)
+^FO10,10^A0N,24,24^FD{PRODUCT_CODE}^FS
+
+^FX Kod kreskowy (niski, żeby zmieścił się na 25 mm wysokości)
+^FO10,40^BY2,2,40
+^BCN,40,Y,N,N
+^FD{PRODUCT_CODE}^FS
+
+^FX Cena
+^FO10,90^A0N,28,28^FD{PRICE} PLN^FS
+
+^XZ

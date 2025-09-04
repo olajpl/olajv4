@@ -1,0 +1,8 @@
+array (
+  'name' => 'test',
+  'code' => '001',
+  'unit_price' => '12',
+  'vat_rate' => '23',
+  'stock_available' => 12,
+  'active' => 0,
+)
