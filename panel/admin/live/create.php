@@ -2,8 +2,7 @@
 // 1. opis czynności lub funkcji
 // Formularz tworzenia nowej transmisji LIVE + obsługa zapisu do bazy (POST)
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 
 
 $owner_id = $_SESSION['user']['owner_id'] ?? 0;

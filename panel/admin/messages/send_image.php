@@ -1,6 +1,5 @@
 <?php
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php'
 
 $client_id    = (int)($_POST['client_id'] ?? 0);
 $owner_id     = (int)($_POST['owner_id'] ?? 0);

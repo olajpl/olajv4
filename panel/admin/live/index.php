@@ -2,8 +2,7 @@
 // 1. opis czynności lub funkcji
 // Lista transmisji LIVE dla zalogowanego ownera z licznikiem pozycji w live_temp
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../layout/layout_header.php';
 
 $owner_id = $_SESSION['user']['owner_id'] ?? 0;

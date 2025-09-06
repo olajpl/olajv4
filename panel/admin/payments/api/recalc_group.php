@@ -3,9 +3,7 @@
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../../engine/Payment/PaymentEngine.php';
 
 use Engine\Payment\PaymentEngine;

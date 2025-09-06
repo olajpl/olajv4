@@ -2,10 +2,8 @@
 // /admin/products/api/search.php — wrapper pod Tom Select
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
-require_once __DIR__ . '/../../../engine/Product/ProductSearch.php';
+require_once __DIR__ . '/../../../bootstrap.php';
+require_once __DIR__ . '/../../../../engine/Product/ProductSearch.php';
 
 use Engine\Product\ProductSearch;
 

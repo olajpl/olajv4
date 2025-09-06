@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 header('Content-Type: application/json');
 
 $product_id = (int)($_GET['id'] ?? 0);

@@ -1,8 +1,7 @@
 <?php
 // admin/logs/ajax_list.php
 declare(strict_types=1);
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__.'/../../../bootstrap.php';
 
 header('Content-Type: text/html; charset=utf-8');
 

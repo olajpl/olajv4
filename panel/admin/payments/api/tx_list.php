@@ -1,92 +1,163 @@
 <?php
-// admin/payments/api/tx_list.php
+// admin/payments/api/tx_list.php — V4: UNION pt + payments, zero HY093 (unikalne placeholdery)
 declare(strict_types=1);
-
-use PDO;
-
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
-
 header('Content-Type: application/json; charset=utf-8');
-if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+
+require_once __DIR__ . '/../../../../bootstrap.php';
+require_once __DIR__ . '/../../../../includes/log.php';
+
+if (\session_status() !== \PHP_SESSION_ACTIVE) \session_start();
+
+$ownerId = (int)($_SESSION['user']['owner_id'] ?? 0);
+$orderId = (int)($_GET['order_id'] ?? 0);
+$groupId = (int)($_GET['group_id'] ?? 0);
+
+if ($ownerId <= 0 || ($orderId <= 0 && $groupId <= 0)) {
+    echo json_encode(['ok' => false, 'error' => 'missing_parameters']); exit;
+}
 
 try {
-    $ownerId = (int)($_SESSION['user']['owner_id'] ?? 0);
-    $orderId = (int)($_GET['order_id'] ?? 0);
-    if ($ownerId <= 0 || $orderId <= 0) {
-        throw new InvalidArgumentException('Missing owner_id / order_id');
-    }
-
+    /** @var PDO $pdo */
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 
-    // 1) Suma pozycji z order_items (brutto/price – w Olaj V4 przyjmujemy unit_price * qty)
-    $st = $pdo->prepare("
-        SELECT COALESCE(SUM(oi.unit_price * oi.qty),0) AS items_total
-        FROM order_groups og
-        JOIN orders o ON o.id = og.order_id AND o.owner_id = :oid
-        JOIN order_items oi ON oi.order_group_id = og.id
-        WHERE og.order_id = :order_id
-    ");
-    $st->execute([':oid' => $ownerId, ':order_id' => $orderId]);
-    $itemsTotal = (float)($st->fetchColumn() ?: 0);
+    $byGroup = $groupId > 0;
 
-    // 2) Lista płatności (payments) + agregaty (tylko PLN – jeśli masz multi-currency, zrób konwersję)
-    $st = $pdo->prepare("
-        SELECT p.id, p.order_group_id, p.amount, p.currency, p.status, p.method_id,
-               pm.name AS method_name, p.provider, p.provider_tx_id,
-               COALESCE(p.booked_at, p.created_at) AS booked_at, p.transaction_type
+    // 1) payment_transactions → już w „języku” frontu
+    $ptWhere = $byGroup
+        ? "pt.owner_id = :own_a AND pt.order_group_id = :id_a"
+        : "pt.owner_id = :own_a AND pt.order_id       = :id_a";
+
+    $sqlPT = "
+        SELECT
+            pt.id,
+            pt.transaction_type,
+            pt.status,
+            pt.amount,
+            pt.currency,
+            pt.amount_pln,
+            pt.net_pln,
+            pt.method,
+            pt.provider,
+            pt.provider_tx_id,
+            pt.created_at,
+            pt.transaction_date,
+            pt.booked_at
+        FROM payment_transactions pt
+        WHERE $ptWhere
+    ";
+
+    $argsPT = [
+        'own_a' => $ownerId,
+        'id_a'  => $byGroup ? $groupId : $orderId,
+    ];
+
+    // 2) payments → zmapowane pod front; bez duplikatów względem PT
+    $pmWhere = $byGroup
+        ? "p.owner_id = :own_b AND p.order_group_id = :id_b"
+        : "p.owner_id = :own_b AND p.order_id       = :id_b";
+
+    $sqlPM = "
+        SELECT
+            p.id,
+            'wpłata' AS transaction_type,
+            CASE p.status
+                WHEN 'paid'      THEN 'zaksięgowana'
+                WHEN 'failed'    THEN 'odrzucona'
+                WHEN 'cancelled' THEN 'anulowana'
+                ELSE 'oczekująca'
+            END AS status,
+            p.amount,
+            p.currency,
+            CASE WHEN p.currency='PLN' THEN p.amount ELSE NULL END AS amount_pln,
+            NULL AS net_pln,
+            p.method,
+            p.provider,
+            p.provider_payment_id AS provider_tx_id,
+            p.created_at,
+            COALESCE(p.paid_at, p.created_at) AS transaction_date,
+            p.paid_at AS booked_at
         FROM payments p
-        LEFT JOIN payment_methods pm ON pm.id = p.method_id
-        JOIN orders o ON o.id = p.order_id AND o.owner_id = :oid
-        WHERE p.order_id = :order_id
-        ORDER BY COALESCE(p.booked_at, p.created_at) DESC, p.id DESC
-    ");
-    $st->execute([':oid' => $ownerId, ':order_id' => $orderId]);
-    $rows = $st->fetchAll() ?: [];
+        WHERE $pmWhere
+          AND NOT EXISTS (
+                SELECT 1
+                FROM payment_transactions pt2
+                WHERE pt2.owner_id = p.owner_id
+                  AND pt2.payment_id = p.id
+          )
+    ";
 
-    $paid = 0.0;
-    $lastPaidAt = null;
-    $tx = [];
-    foreach ($rows as $r) {
-        $amt = (float)$r['amount'];
-        $type = (string)($r['transaction_type'] ?? 'wpłata'); // jeśli masz pole; inaczej heurystyka po znaku kwoty
-        if ($type === '') $type = ($amt < 0 ? 'zwrot' : 'wpłata');
+    $argsPM = [
+        'own_b' => $ownerId,
+        'id_b'  => $byGroup ? $groupId : $orderId,
+    ];
 
-        if ((string)$r['status'] === 'paid') {
-            $paid += $amt;
-            if (!$lastPaidAt || $r['booked_at'] > $lastPaidAt) {
-                $lastPaidAt = (string)$r['booked_at'];
-            }
-        }
+    // UNION (paramy podajemy jako merge dwóch zestawów)
+    $sqlUnion = "
+        SELECT * FROM (
+            $sqlPT
+            UNION ALL
+            $sqlPM
+        ) t
+        ORDER BY t.transaction_date DESC, t.id DESC
+        LIMIT 200
+    ";
+    $st = $pdo->prepare($sqlUnion);
+    $st->execute($argsPT + $argsPM);
+    $transactions = $st->fetchAll();
 
-        $tx[] = [
-            'id'              => (int)$r['id'],
-            'order_group_id'  => (int)$r['order_group_id'],
-            'transaction_type' => $type,
-            'status'          => (string)$r['status'],
-            'amount'          => $amt,
-            'amount_pln'      => (string)$r['currency'] === 'PLN' ? $amt : $amt, // TODO FX jeśli trzeba
-            'method'          => $r['method_name'] ?? null,
-            'provider'        => $r['provider'] ?? null,
-            'provider_tx_id'  => $r['provider_tx_id'] ?? null,
-            'booked_at'       => $r['booked_at'] ?? null,
-        ];
+    // 3) Suma pozycji (order_items → order_groups → orders z owner guard)
+    if ($byGroup) {
+        $sqlItems = "
+            SELECT COALESCE(SUM(oi.qty * oi.unit_price),0) AS total
+            FROM order_items oi
+            JOIN order_groups og ON og.id = oi.order_group_id
+            JOIN orders o        ON o.id  = og.order_id
+            WHERE o.owner_id = :own_i AND og.id = :id_i
+        ";
+        $argsItems = ['own_i' => $ownerId, 'id_i' => $groupId];
+    } else {
+        $sqlItems = "
+            SELECT COALESCE(SUM(oi.qty * oi.unit_price),0) AS total
+            FROM order_items oi
+            JOIN order_groups og ON og.id = oi.order_group_id
+            JOIN orders o        ON o.id  = og.order_id
+            WHERE o.owner_id = :own_i AND og.order_id = :id_i
+        ";
+        $argsItems = ['own_i' => $ownerId, 'id_i' => $orderId];
     }
-    $due = $itemsTotal - $paid;
+    $stIt = $pdo->prepare($sqlItems);
+    $stIt->execute($argsItems);
+    $items_total = (float)($stIt->fetchColumn() ?: 0.0);
+
+    // 4) Suma wpłat PLN + ostatnia płatność (źródło: payments)
+    $sqlPaid = "
+        SELECT
+            COALESCE(SUM(CASE WHEN p.currency='PLN' AND p.status='paid' THEN p.amount ELSE 0 END),0) AS paid_pln,
+            MAX(p.paid_at) AS last_paid_at
+        FROM payments p
+        WHERE $pmWhere
+    ";
+    $stPaid = $pdo->prepare($sqlPaid);
+    $stPaid->execute($argsPM);
+    $paidRow = $stPaid->fetch() ?: [];
+    $paid_amount_pln = (float)($paidRow['paid_pln'] ?? 0.0);
+    $last_payment_at = $paidRow['last_paid_at'] ?? null;
+
+    $due = $items_total - $paid_amount_pln;
 
     echo json_encode([
-        'ok'             => true,
-        'items_total'    => $itemsTotal,
-        'paid_amount_pln' => $paid,
-        'due'            => $due,
-        'last_payment_at' => $lastPaidAt,
-        'transactions'   => $tx,
+        'ok'               => true,
+        'items_total'      => $items_total,
+        'paid_amount_pln'  => $paid_amount_pln,
+        'due'              => $due,
+        'last_payment_at'  => $last_payment_at,
+        'transactions'     => $transactions,
+        // zgodność wstecz:
+        'rows'             => $transactions,
     ], JSON_UNESCAPED_UNICODE);
-} catch (Throwable $e) {
-    log_exception($e, ['api' => 'tx_list', 'get' => $_GET ?? []]);
-    http_response_code(500);
+} catch (\Throwable $e) {
+    logg('error', 'payments.tx_list', 'exception', ['msg' => $e->getMessage()]);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

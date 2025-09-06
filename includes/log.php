@@ -177,3 +177,10 @@ if (!function_exists('wlog')) {
         logg('warning', 'stderr', 'wlog', ['message' => $msg], ['context' => 'stderr']);
     }
 }
+if (!function_exists('log_exception')) {
+    function log_exception(\Throwable $e, array $ctx = []): void {
+        logg('error', 'exception', $e->getMessage(), $ctx + [
+            'trace' => $e->getTraceAsString(),
+        ]);
+    }
+}

@@ -2,13 +2,7 @@
 // admin/orders/view.php — szczegóły zamówienia (Olaj.pl V4)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php';
-require_once __DIR__ . '/../../engine/Orders/ViewRenderer.php';
-require_once __DIR__ . '/../../engine/Enum/OrderStatus.php';
-
-require_once __DIR__ . '/../../layout/layout_header.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 
 use Engine\Orders\ViewRenderer;
 use Engine\Enum\OrderStatus;
@@ -28,6 +22,8 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
 }
 $csrf = $_SESSION['csrf_token'];
+
+require_once __DIR__ . '/../../layout/layout_header.php';
 
 // ───────────────────────────────────────────────────────────────
 // Helpery
@@ -204,6 +200,7 @@ if (!isset($tabs[$active])) $active = 'overview';
                 require __DIR__ . '/partials/_overview_groups.php';
                 require __DIR__ . '/partials/_overview_groups_js.php';
                 ?>
+
             </div>
 
             <!-- Podsumowanie -->
@@ -219,28 +216,69 @@ if (!isset($tabs[$active])) $active = 'overview';
                         <div class="mt-3"><?= ViewRenderer::renderPaymentWidget($pdo, $orderId, $ownerId) ?></div>
                     </div>
                 </div>
-                <button class="btn btn-primary" data-inpost-create data-order-id="<?= (int)$order['id'] ?>" data-group-id="<?= (int)$group['id'] ?>" data-method-id="<?= (int)($group['shipping_method_id'] ?? 0) ?>">
-                    Utwórz etykietę InPost
-                </button>
+
+                <?php
+                // Przyciski InPost — poprawka: wybór grupy + CSRF
+                $firstGroupId = isset($groups[0]['id']) ? (int)$groups[0]['id'] : 0;
+                ?>
+                <div class="space-y-2">
+                    <label class="block text-sm text-stone-600">Grupa do wysyłki</label>
+                    <select id="inpostGroupSelect" class="w-full px-3 py-2 rounded-lg border border-stone-300">
+                        <?php if (!$groups): ?>
+                            <option value="">Brak grup</option>
+                        <?php else: foreach ($groups as $g): 
+                            $gid = (int)$g['id'];
+                            $label = '#'.$gid.' • '.htmlspecialchars((string)($g['name'] ?? 'Paczka'), ENT_QUOTES, 'UTF-8');
+                        ?>
+                            <option 
+                                value="<?= $gid ?>"
+                                data-method-id="<?= (int)($g['shipping_method_id'] ?? 0) ?>"
+                                <?= $gid === $firstGroupId ? 'selected' : '' ?>>
+                                <?= $label ?>
+                            </option>
+                        <?php endforeach; endif; ?>
+                    </select>
+
+                    <button 
+                        class="btn btn-primary w-full"
+                        data-inpost-create
+                        data-order-id="<?= (int)$order['id'] ?>"
+                        <?= !$groups ? 'disabled' : '' ?>>
+                        Utwórz etykietę InPost
+                    </button>
+                </div>
+
                 <script>
                     document.addEventListener('click', async (e) => {
                         const b = e.target.closest('[data-inpost-create]');
                         if (!b) return;
+
+                        const sel = document.getElementById('inpostGroupSelect');
+                        const groupId = sel?.value || '';
+                        const methodId = sel?.selectedOptions?.[0]?.dataset?.methodId || '';
+
+                        if (!groupId) { alert('Wybierz grupę.'); return; }
+
                         const body = new URLSearchParams({
                             order_id: b.dataset.orderId,
-                            order_group_id: b.dataset.groupId,
-                            shipping_method_id: b.dataset.methodId || ''
+                            order_group_id: groupId,
+                            shipping_method_id: methodId,
+                            csrf: '<?= e($csrf) ?>'
                         });
+
                         b.disabled = true;
                         try {
                             const r = await fetch('/admin/api/inpost_create_shipment.php', {
                                 method: 'POST',
+                                headers: {
+                                    'X-CSRF-Token': '<?= e($csrf) ?>'
+                                },
                                 body
                             });
                             const j = await r.json();
                             if (!j.ok) throw new Error(j.error || 'Błąd InPost');
                             alert('OK! Tracking: ' + (j.tracking_number || '–'));
-                            // TODO: wstaw j.label_url i tracking do UI listy etykiet
+                            // TODO: odśwież listę etykiet (AJAX) i pokaż j.label_url / j.tracking_number
                         } catch (err) {
                             alert('Błąd: ' + err.message);
                         } finally {
@@ -276,26 +314,25 @@ if (!isset($tabs[$active])) $active = 'overview';
                 ?>
                 <?php if (!$labels): ?>
                     <div class="text-stone-500">Brak wygenerowanych etykiet.</div>
-                    <?php else: foreach ($labels as $lab): ?>
-                        <div class="p-3 border rounded-lg">
-                            <div class="flex items-center justify-between">
-                                <div class="font-medium">
-                                    #<?= (int)$lab['id'] ?> • <?= e((string)($lab['carrier'] ?? '')) ?> • <?= e((string)($lab['status'] ?? 'pending')) ?>
-                                </div>
-                                <div class="text-stone-500"><?= e((string)($lab['created_at'] ?? '')) ?></div>
+                <?php else: foreach ($labels as $lab): ?>
+                    <div class="p-3 border rounded-lg">
+                        <div class="flex items-center justify-between">
+                            <div class="font-medium">
+                                #<?= (int)$lab['id'] ?> • <?= e((string)($lab['carrier'] ?? '')) ?> • <?= e((string)($lab['status'] ?? 'pending')) ?>
                             </div>
-                            <?php if (!empty($lab['tracking_number'])): ?>
-                                <div class="mt-1">Tracking: <b><?= e((string)$lab['tracking_number']) ?></b></div>
-                            <?php endif; ?>
-                            <?php if (!empty($lab['label_url'])): ?>
-                                <div class="mt-1"><a class="text-blue-700 hover:underline" href="<?= e((string)$lab['label_url']) ?>" target="_blank" rel="noopener">Pobierz etykietę</a></div>
-                            <?php endif; ?>
-                            <?php if (!empty($lab['error'])): ?>
-                                <div class="mt-1 text-rose-700">Błąd: <?= e((string)$lab['error']) ?></div>
-                            <?php endif; ?>
+                            <div class="text-stone-500"><?= e((string)($lab['created_at'] ?? '')) ?></div>
                         </div>
-                <?php endforeach;
-                endif; ?>
+                        <?php if (!empty($lab['tracking_number'])): ?>
+                            <div class="mt-1">Tracking: <b><?= e((string)$lab['tracking_number']) ?></b></div>
+                        <?php endif; ?>
+                        <?php if (!empty($lab['label_url'])): ?>
+                            <div class="mt-1"><a class="text-blue-700 hover:underline" href="<?= e((string)$lab['label_url']) ?>" target="_blank" rel="noopener">Pobierz etykietę</a></div>
+                        <?php endif; ?>
+                        <?php if (!empty($lab['error'])): ?>
+                            <div class="mt-1 text-rose-700">Błąd: <?= e((string)$lab['error']) ?></div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; endif; ?>
 
                 <?php if ($canEdit): ?>
                     <form class="mt-2" method="post" action="/admin/shipping/api/create_label.php">

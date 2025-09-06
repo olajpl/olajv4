@@ -10,25 +10,28 @@ use function htmlspecialchars;
 
 // ✳️ spróbuj załadować enum (gdy nie ma composera/autoloadera)
 @require_once __DIR__ . '/../Enum/OrderStatus.php';
-
 use Engine\Enum\OrderStatus;
 
-
-
-// ✳️ helper zwracający wartość enuma lub fallback-string
+/**
+ * Pobiera wartość enuma po nazwie case'a (np. 'NOWE'), a gdy enum nie istnieje — zwraca fallback.
+ */
 if (!function_exists('__os_val')) {
     function __os_val(string $case, string $fallback): string
     {
         try {
             if (class_exists(\Engine\Enum\OrderStatus::class)) {
-                $obj = constant(\Engine\Enum\OrderStatus::class . '::' . $case); // enum case
-                return \is_object($obj) && property_exists($obj, 'value') ? $obj->value : (string)$obj;
+                /** @var \BackedEnum|\UnitEnum|string $obj */
+                $obj = constant(\Engine\Enum\OrderStatus::class . '::' . $case);
+                // dla BackedEnum mamy ->value; dla UnitEnum rzutujemy do stringa nazwę case'a
+                return \is_object($obj) && property_exists($obj, 'value') ? (string)$obj->value : (string)$obj;
             }
         } catch (\Throwable $__) {
+            // cicho i miękko wróć do fallbacku
         }
         return $fallback;
     }
 }
+
 if (!\function_exists('logg')) {
     /** Fallback logger – gdy includes/log.php nie zostało dołączone. */
     function logg(string $level, string $channel, string $message, array $context = [], array $extra = []): void
@@ -220,7 +223,7 @@ class ViewRenderer
                     $due = (float)($dues[$gid] ?? 0.0);
                     $apply = min($pool, $due);
                     $applied[$gid] = $apply;
-                    $balance[$gid] = $apply - $due; // <=0: niedopłata, >0: nadpłata (teoretycznie nie wystąpi z min())
+                    $balance[$gid] = $apply - $due; // <=0: niedopłata, >0: nadpłata
                     $pool -= $apply;
                 }
             }
@@ -334,7 +337,7 @@ class ViewRenderer
         $OPEN   = __os_val('OPEN_PACKAGE', 'otwarta_paczka');
         $OPEN_A = __os_val('OPEN_PACKAGE_ADD_PRODUCTS', 'otwarta_paczka:add_products');
         $OPEN_P = __os_val('OPEN_PACKAGE_PAYMENT_ONLY', 'otwarta_paczka:payment_only');
-        $READY  = __os_val('READY_TO_SHIP', 'gotowe_do_wysylki');
+        $READY  = __os_val('READY_TO_SHIP', 'gotowe_do_wysyłki');
         $DONE   = __os_val('COMPLETED', 'zrealizowane');
 
         $rowBg = match ($status) {
@@ -410,28 +413,32 @@ class ViewRenderer
     /** Chip płatności — przyjmie też tablicę albo null i ucywilizuje. */
     public static function renderPayChip(mixed $status): string
     {
-        $norm = mb_strtolower(trim(self::s($status, 'nieopłacona')));
-        // Normalizacja aliasów
+        $norm = mb_strtolower(trim(self::s($status, 'nieopłacone')));
+
+        // Prosta normalizacja znanych wariantów
         $map = [
-            'oplacona' => 'opłacona',
-            'czesciowa' => 'częściowa',
-            'czesciowo' => 'częściowa',
-            'czesciowa_platnosc' => 'częściowa',
-            'nadplata' => 'nadpłata',
             'nieoplacona' => 'nieopłacone',
             'nieopłacona' => 'nieopłacone',
+            'nieoplacone' => 'nieopłacone',
+            'oplacona'    => 'opłacone',
+            'oplacone'    => 'opłacone',
+            'opłacona'    => 'opłacone',
+            'opłacone'    => 'opłacone',
+            'czesciowa'   => 'częściowo',
+            'czesciowo'   => 'częściowo',
+            'nadplata'    => 'nadpłata',
         ];
         $norm = $map[$norm] ?? $norm;
 
         return match ($norm) {
-            'opłacona', 'oplacone', 'opłacone' =>
-            '<span class="px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">opłacone</span>',
-            'częściowa', 'częściowo' =>
-            '<span class="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 border border-amber-200">częściowo</span>',
+            'opłacone' =>
+                '<span class="px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">opłacone</span>',
+            'częściowo' =>
+                '<span class="px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 border border-amber-200">częściowo</span>',
             'nadpłata' =>
-            '<span class="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">nadpłata</span>',
+                '<span class="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">nadpłata</span>',
             default =>
-            '<span class="px-2 py-1 text-xs rounded-full bg-stone-100 text-stone-700 border border-stone-200">nieopłacone</span>',
+                '<span class="px-2 py-1 text-xs rounded-full bg-stone-100 text-stone-700 border border-stone-200">nieopłacone</span>',
         };
     }
 
@@ -456,24 +463,30 @@ class ViewRenderer
         $OPEN_A = __os_val('OPEN_PACKAGE_ADD_PRODUCTS', 'otwarta_paczka:add_products');
         $OPEN_P = __os_val('OPEN_PACKAGE_PAYMENT_ONLY', 'otwarta_paczka:payment_only');
         $WAIT   = __os_val('AWAITING_PAYMENT', 'oczekuje_na_płatność');
-        $READY  = __os_val('READY_TO_SHIP', 'gotowe_do_wysylki');
-        $SHIP   = __os_val('SHIPPED', 'wyslane');
+        $READY  = __os_val('READY_TO_SHIP', 'gotowe_do_wysyłki');
+        $SHIP   = __os_val('SHIPPED', 'wysłane');
         $DONE   = __os_val('COMPLETED', 'zrealizowane');
         $CXL    = __os_val('CANCELLED', 'anulowane');
-        $ARCH   = __os_val('ARCHIVED', 'archiwized');
+        $ARCH   = __os_val('ARCHIVED', 'zarchiwizowane');
 
         return match ($s) {
             $NOWE   => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 border border-blue-200">Nowe</span>',
             $OPEN_A => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 border border-amber-200">Dodawanie produktów</span>',
             $OPEN_P => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 border border-amber-200">Czeka na checkout</span>',
             $WAIT, 'oczekuje_na_platnosc' =>
-            '<span class="inline-block px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200">Czeka na płatność</span>',
-            $READY  => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">Gotowe do wysyłki</span>',
-            $SHIP   => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">Wysłane</span>',
-            $DONE   => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-stone-200 text-stone-800 border border-stone-300">Zrealizowane</span>',
-            $CXL    => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 border border-red-200">Anulowane</span>',
-            $ARCH   => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-700 border border-gray-300">Zarchiwizowane</span>',
-            default => '<span class="inline-block px-2 py-1 text-xs rounded-full bg-stone-100 text-stone-700 border border-stone-200">' . $h($s) . '</span>',
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200">Czeka na płatność</span>',
+            $READY  =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">Gotowe do wysyłki</span>',
+            $SHIP   =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">Wysłane</span>',
+            $DONE   =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-stone-200 text-stone-800 border border-stone-300">Zrealizowane</span>',
+            $CXL    =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 border border-red-200">Anulowane</span>',
+            $ARCH   =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-700 border border-gray-300">Zarchiwizowane</span>',
+            default =>
+                '<span class="inline-block px-2 py-1 text-xs rounded-full bg-stone-100 text-stone-700 border border-stone-200">' . $h($s) . '</span>',
         };
     }
 
@@ -500,7 +513,13 @@ class ViewRenderer
     public static function renderPaymentModal(PDO $pdo, int $order_id, int $owner_id, string $csrf): void
     {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM order_groups WHERE order_id = ? AND (deleted_at IS NULL OR deleted_at IS NULL) ORDER BY id ASC");
+            // ✅ usunięta duplikacja warunku na deleted_at
+            $stmt = $pdo->prepare("
+                SELECT * FROM order_groups
+                WHERE order_id = ?
+                  AND (deleted_at IS NULL)
+                ORDER BY id ASC
+            ");
             $stmt->execute([$order_id]);
             $groups = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (Throwable $e) {

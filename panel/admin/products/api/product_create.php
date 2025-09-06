@@ -1,9 +1,8 @@
 <?php
 // admin/products/api/product_create.php
 declare(strict_types=1);
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../engine/Product/ProductEngine.php';
+require_once __DIR__ . '/../../../bootstrap.php';
+require_once __DIR__ . '/../../../../engine/Product/ProductEngine.php';
 
 use Engine\Product\ProductEngine;
 

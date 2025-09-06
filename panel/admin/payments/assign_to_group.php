@@ -19,14 +19,12 @@ header('Content-Type: application/json; charset=utf-8');
 use Engine\Payment\PaymentEngine;
 
 // --- Bootstrap (auth + db + log) — auth uruchamia sesję i seeduje CSRF ---
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 
 // --- PaymentEngine (case-sensitive ścieżki) ---
 $paymentEnginePathCandidates = [
-    __DIR__ . '/../../engine/Payment/PaymentEngine.php',
     __DIR__ . '/../../../engine/Payment/PaymentEngine.php',
+    __DIR__ . '/../../../../engine/Payment/PaymentEngine.php',
 ];
 foreach ($paymentEnginePathCandidates as $pp) {
     if (is_file($pp)) { require_once $pp; break; }

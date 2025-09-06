@@ -2,9 +2,7 @@
 // admin/products/index.php — Olaj V4: Products (full, engine-first)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php'; // Olaj V4: zawsze po db.php
+require_once __DIR__ . '/../../../bootstrap.php';// Olaj V4: zawsze po db.php
 require_once __DIR__ . '/../../layout/layout_header.php';
 
 // ───────────────────────────────────────────────────────────────
@@ -31,15 +29,7 @@ function buildQuery(array $extra = []): string
 }
 
 
-function columnExists(PDO $pdo, string $t, string $cname): bool
-{
-  static $c = [];
-  $k = "$t|$cname";
-  if (isset($c[$k])) return $c[$k];
-  $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=:t AND COLUMN_NAME=:c LIMIT 1");
-  $st->execute([':t' => $t, ':c' => $cname]);
-  return $c[$k] = (bool)$st->fetchColumn();
-}
+
 function runQuery(PDO $pdo, string $sql, array $params = [], ?array &$err = null): ?PDOStatement
 {
   try {
@@ -100,7 +90,7 @@ $total_pages = 1;
 // ENGINE: require + init
 $engineOk = false;
 try {
-  require_once __DIR__ . '/../../engine/Orders/ProductEngine.php';
+  require_once __DIR__ . '/../../../engine/Orders/ProductEngine.php';
   if (class_exists('ProductEngine')) {
     $engine = new ProductEngine($pdo, $ownerId);
     if (method_exists($engine, 'listProducts')) {

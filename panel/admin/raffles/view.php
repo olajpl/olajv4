@@ -2,9 +2,7 @@
 // admin/raffles/view.php — podgląd losowania + akcje + animacja 3-bębnowa + picker klienta
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
   @session_start();

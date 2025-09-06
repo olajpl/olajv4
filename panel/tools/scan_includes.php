@@ -158,3 +158,4 @@ function detectKindFromMatch(string $match): string {
     if (stripos($match, 'require') !== false) return 'require';
     return 'include';
 }
+php tools/scan_includes.php

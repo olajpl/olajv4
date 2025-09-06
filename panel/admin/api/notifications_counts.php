@@ -16,9 +16,7 @@ declare(strict_types=1);
  * - ?debug=1 — dorzuca diagnostykę zapytań
  */
 
-$BASE = dirname(__DIR__, 2);
-require_once $BASE . '/includes/auth.php';
-require_once $BASE . '/includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php'
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

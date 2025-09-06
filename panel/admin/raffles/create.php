@@ -2,8 +2,7 @@
 // admin/raffles/create.php — formularz tworzenia losowania (widok)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../includes/log.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {

@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Wymaga: $groups, $itemsByGroup, $dues, $paid, $applied, $order, $csrf, $canEditLocal
  * Helpery: e(), zl()
@@ -17,9 +16,12 @@
                 $gPaid    = (float)($paid[$gid] ?? 0.0);
                 $gApplied = (float)($applied[$gid] ?? 0.0);
                 $gStatus  = ($gApplied <= 0.01) ? 'nieopłacona' : (($gApplied + 0.01 < $gDue) ? 'częściowa' : (abs($gApplied - $gDue) <= 0.01 ? 'opłacona' : 'nadpłata'));
+
                 $groupItems = $itemsByGroup[$gid] ?? [];
                 $sum = 0.0;
-                foreach ($groupItems as $it) $sum += (float)$it['qty'] * (float)($it['unit_price'] ?? 0.0);
+                foreach ($groupItems as $it) {
+                    $sum += (float)$it['qty'] * (float)($it['unit_price'] ?? 0.0);
+                }
             ?>
                 <div class="border rounded-lg overflow-hidden">
                     <!-- Header grupy -->
@@ -55,66 +57,118 @@
                                     <tr>
                                         <th class="text-left px-2 py-1.5">Produkt</th>
                                         <th class="text-right px-2 py-1.5">Ilość</th>
-                                        <th class="text-right px-2 py-1.5">Cena</th>
-                                        <th class="text-right px-2 py-1.5">Wartość</th>
+                                        <th class="text-right px-2 py-1.5">Cena </th>
+                                        <th class="text-right px-2 py-1.5">VAT %</th>
+                                        <th class="text-right px-2 py-1.5">Wartość </th>
                                         <th class="px-2 py-1.5"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($groupItems as $it):
-                                        $rowVal = (float)$it['qty'] * (float)($it['unit_price'] ?? 0.0);
-                                        $sku = $it['sku'] ?? null;
-                                    ?>
-                                        <tr class="border-t" data-item-id="<?= (int)($it['id'] ?? 0) ?>">
-                                            <td class="px-2 py-1.5">
-                                                <div class="font-medium"><?= e((string)($it['name'] ?? $it['product_name'] ?? 'Produkt')) ?></div>
-                                                <?php if (!empty($sku)): ?>
-                                                    <div class="text-stone-500 text-xs">sku: <?= e((string)$sku) ?></div>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="px-2 py-1.5 text-right">
-                                                <?php if ($canEditLocal && empty($g['checkout_completed'])): ?>
-                                                    <form class="inline-flex items-center gap-1 justify-end" method="post" action="/admin/orders/api/item_update_qty.php">
-                                                        <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
-                                                        <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
-                                                        <input type="hidden" name="group_id" value="<?= $gid ?>">
-                                                        <input type="hidden" name="item_id" value="<?= (int)($it['id'] ?? 0) ?>">
-                                                        <input type="number" name="qty" step="0.001" min="0" value="<?= e((string)$it['qty']) ?>"
-                                                            class="w-24 px-2 py-1 rounded border border-stone-300 text-right" />
-                                                        <button class="px-2 py-1 rounded border border-stone-300 hover:bg-stone-100">Zapisz</button>
-                                                    </form>
-                                                <?php else: ?>
-                                                    <?= e((string)($it['qty'] ?? '')) ?>
-                                                <?php endif; ?>
-                                                <div class="text-xs text-stone-500 mt-0.5">
-                                                    <span data-role="prepared-progress">
-                                                        <?= (int)($it['packed_count'] ?? 0) ?> / <?= e((string)($it['qty'] ?? '0')) ?>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td class="px-2 py-1.5 text-right"><?= zl((float)($it['unit_price'] ?? 0.0)) ?></td>
-                                            <td class="px-2 py-1.5 text-right"><?= zl($rowVal) ?></td>
-                                            <td class="px-2 py-1.5 text-right">
-                                                <?php $done = ((int)($it['packed_count'] ?? 0)) >= (float)($it['qty'] ?? 0.0); ?>
-                                                <span data-role="prepared-chip" class="text-xs px-2 py-0.5 rounded-full <?= $done ? 'bg-green-100 border border-green-200 text-green-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800' ?>">
-                                                    <?= $done ? 'przygotowane' : 'w toku' ?>
-                                                </span>
-                                                <?php if ($canEditLocal && empty($g['checkout_completed'])): ?>
-                                                    <form class="inline" method="post" action="/admin/orders/api/item_remove.php" onsubmit="return confirm('Usunąć pozycję?')">
-                                                        <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
-                                                        <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
-                                                        <input type="hidden" name="group_id" value="<?= $gid ?>">
-                                                        <input type="hidden" name="item_id" value="<?= (int)($it['id'] ?? 0) ?>">
-                                                        <button class="ml-2 px-2 py-1 rounded border border-stone-300 hover:bg-stone-100">Usuń</button>
-                                                    </form>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
+<?php foreach ($groupItems as $it):
+    $iid    = (int)($it['id'] ?? 0);
+    $qty    = (float)($it['qty'] ?? 0.0);
+    $priceN = (float)($it['unit_price'] ?? 0.0);     // NETTO (konsekwentnie)
+    $vat    = (float)($it['vat_rate'] ?? 23.0);      // %
+    $rowNet = $qty * $priceN;                        // NETTO
+    $sku    = $it['sku'] ?? null;
+
+    $packed = (float)($it['packed_count'] ?? 0.0);
+    $done   = ($qty > 0) && ($packed + 0.0001 >= $qty);
+?>
+    <?php if ($canEditLocal && empty($g['checkout_completed'])): ?>
+    <!-- Tryb edycji: jeden FORM na cały wiersz -->
+    <tr class="border-t" data-item-id="<?= $iid ?>">
+        <form method="post" action="/admin/orders/api/item_update.php">
+            <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <input type="hidden" name="group_id" value="<?= $gid ?>">
+            <input type="hidden" name="item_id" value="<?= $iid ?>">
+
+            <td class="px-2 py-1.5">
+                <div class="font-medium"><?= e((string)($it['name'] ?? $it['product_name'] ?? 'Produkt')) ?></div>
+                <?php if (!empty($sku)): ?>
+                    <div class="text-stone-500 text-xs">sku: <?= e((string)$sku) ?></div>
+                <?php endif; ?>
+                <div class="text-xs text-stone-500 mt-0.5">
+                    <span data-role="prepared-progress"><?= e((string)$packed) ?> / <?= e((string)$qty) ?></span>
+                </div>
+            </td>
+
+            <td class="px-2 py-1.5 text-right">
+                <input type="number" name="qty" step="0.001" min="0"
+                       value="<?= e(number_format($qty, 3, '.', '')) ?>"
+                       class="w-24 px-2 py-1 rounded border border-stone-300 text-right" />
+            </td>
+
+            <td class="px-2 py-1.5 text-right">
+                <input type="number" name="unit_price" step="0.01" min="0"
+                       value="<?= e(number_format($priceN, 2, '.', '')) ?>"
+                       class="w-28 px-2 py-1 rounded border border-stone-300 text-right" title="Cena NETTO" />
+            </td>
+
+            <td class="px-2 py-1.5 text-right">
+                <input type="number" name="vat_rate" step="0.1" min="0"
+                       value="<?= e(number_format($vat, 1, '.', '')) ?>"
+                       class="w-20 px-2 py-1 rounded border border-stone-300 text-right" title="VAT %" />%
+            </td>
+
+            <td class="px-2 py-1.5 text-right">
+                <?= zl($rowNet) ?>
+            </td>
+
+            <td class="px-2 py-1.5 text-right whitespace-nowrap">
+                <span data-role="prepared-chip"
+                      class="text-xs px-2 py-0.5 rounded-full <?= $done ? 'bg-green-100 border border-green-200 text-green-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800' ?>">
+                    <?= $done ? 'przygotowane' : 'w toku' ?>
+                </span>
+
+                <button class="ml-2 px-2 py-1 rounded border border-stone-300 hover:bg-stone-100">
+                    Zapisz
+                </button>
+
+                <form class="inline" method="post" action="/admin/orders/api/item_remove.php"
+                      onsubmit="return confirm('Usunąć pozycję?')">
+                    <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
+                    <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                    <input type="hidden" name="group_id" value="<?= $gid ?>">
+                    <input type="hidden" name="item_id" value="<?= $iid ?>">
+                    <button class="ml-2 px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50">
+                        Usuń
+                    </button>
+                </form>
+            </td>
+        </form>
+    </tr>
+    <?php else: ?>
+    <!-- Tryb tylko podgląd: zero dupli w kolumnie Ilość -->
+    <tr class="border-t" data-item-id="<?= $iid ?>">
+        <td class="px-2 py-1.5">
+            <div class="font-medium"><?= e((string)($it['name'] ?? $it['product_name'] ?? 'Produkt')) ?></div>
+            <?php if (!empty($sku)): ?>
+                <div class="text-stone-500 text-xs">sku: <?= e((string)$sku) ?></div>
+            <?php endif; ?>
+            <div class="text-xs text-stone-500 mt-0.5">
+                <span data-role="prepared-progress"><?= e((string)$packed) ?> / <?= e((string)$qty) ?></span>
+            </div>
+        </td>
+        <td class="px-2 py-1.5 text-right"><?= e(rtrim(rtrim(number_format($qty, 3, '.', ''), '0'), '.')) ?></td>
+        <td class="px-2 py-1.5 text-right"><?= zl($priceN) ?></td>
+        <td class="px-2 py-1.5 text-right"><?= e(number_format($vat, 1, ',', ' ')) ?>%</td>
+        <td class="px-2 py-1.5 text-right"><?= zl($rowNet) ?></td>
+        <td class="px-2 py-1.5 text-right">
+            <span data-role="prepared-chip"
+                  class="text-xs px-2 py-0.5 rounded-full <?= $done ? 'bg-green-100 border border-green-200 text-green-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800' ?>">
+                <?= $done ? 'przygotowane' : 'w toku' ?>
+            </span>
+        </td>
+    </tr>
+    <?php endif; ?>
+<?php endforeach; ?>
+</tbody>
+
                                 <tfoot>
                                     <tr class="border-t bg-stone-50">
-                                        <td colspan="3" class="px-2 py-2 text-right font-medium">Suma grupy</td>
+                                        <td colspan="4" class="px-2 py-2 text-right font-medium">Suma grupy (netto)</td>
                                         <td class="px-2 py-2 text-right font-semibold"><?= zl($sum) ?></td>
                                         <td class="px-2 py-2"></td>
                                     </tr>
@@ -136,13 +190,13 @@
                                             <input type="text" name="name" placeholder="Nazwa *" required class="px-2 py-1 rounded border border-stone-300 md:col-span-2">
                                             <input type="text" name="code" placeholder="SKU/EAN" class="px-2 py-1 rounded border border-stone-300">
                                             <input type="number" name="qty" placeholder="Ilość *" step="0.001" min="0.001" required class="px-2 py-1 rounded border border-stone-300">
-                                            <input type="number" name="unit_price" placeholder="Cena brutto *" step="0.01" min="0" required class="px-2 py-1 rounded border border-stone-300">
-                                            <input type="number" name="vat_rate" placeholder="VAT %" step="0.01" min="0" value="23.00" class="px-2 py-1 rounded border border-stone-300">
+                                            <input type="number" name="unit_price" placeholder="Cena NETTO *" step="0.01" min="0" required class="px-2 py-1 rounded border border-stone-300">
+                                            <input type="number" name="vat_rate" placeholder="VAT %" step="0.1" min="0" value="23.0" class="px-2 py-1 rounded border border-stone-300">
 
-                                            <div class="md:col-span-6 flex items-center gap-2">
-                                                <button class="px-3 py-1.5 rounded bg-stone-900 text-white hover:bg-stone-800">Dodaj</button>
-                                                <span class="text-xs text-stone-500">`source_type` = <b>manual</b>.</span>
-                                            </div>
+                        <div class="md:col-span-6 flex items-center gap-2">
+                            <button class="px-3 py-1.5 rounded bg-stone-900 text-white hover:bg-stone-800">Dodaj</button>
+                            <span class="text-xs text-stone-500">`source_type` = <b>manual</b>.</span>
+                        </div>
                                         </form>
                                     </div>
                                 </div>
@@ -154,3 +208,4 @@
         <?php endif; ?>
     </div>
 </div>
+

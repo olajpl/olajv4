@@ -1,43 +1,71 @@
 <?php
-
 declare(strict_types=1);
+require_once __DIR__.'/../../../../bootstrap.php';
 
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
+use Engine\Orders\OrderEngine;
 
 if (session_status() === PHP_SESSION_NONE) session_start();
+
+/* ---- Wejście ---- */
 $ownerId = (int)($_SESSION['user']['owner_id'] ?? 0);
+$csrf    = $_POST['csrf'] ?? '';
+$orderId = (int)($_POST['order_id'] ?? 0);
+$groupId = (int)($_POST['group_id'] ?? 0);
+$itemId  = (int)($_POST['item_id'] ?? 0);
 
-$csrf     = $_POST['csrf'] ?? '';
-$orderId  = (int)($_POST['order_id'] ?? 0);
-$groupId  = (int)($_POST['group_id'] ?? 0);
-$itemId   = (int)($_POST['item_id'] ?? 0);
-
-if (!$ownerId || !$orderId || !$groupId || !$itemId) {
-    http_response_code(400);
-    exit('Bad request');
+/* Tryb odpowiedzi: JSON (default) albo HTML (redirect) */
+$returnMode = 'json';
+if (
+    (isset($_POST['return']) && $_POST['return'] === 'html')
+    || (!empty($_POST['return_to']))
+    || (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'text/html') !== false
+        && (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) !== 'xmlhttprequest'))
+) {
+    $returnMode = 'html';
 }
-if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
-    http_response_code(403);
-    exit('Forbidden');
+
+$bad = (!$ownerId || !$orderId || !$groupId || !$itemId);
+$forbidden = !hash_equals($_SESSION['csrf_token'] ?? '', $csrf);
+
+if ($bad || $forbidden) {
+    if ($returnMode === 'html') {
+        $_SESSION['flash_error'] = $bad ? 'Bad request' : 'Forbidden';
+        $back = $_POST['return_to'] ?? ("/admin/orders/view.php?id={$orderId}&group_id={$groupId}");
+        header('Location: ' . $back);
+        exit;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code($bad ? 400 : 403);
+    echo json_encode(['ok'=>false,'error'=>$bad ? 'Bad request':'Forbidden']);
+    exit;
 }
 
 try {
-    $pdo->beginTransaction();
-    $chk = $pdo->prepare("SELECT o.id FROM orders o JOIN order_groups og ON og.order_id=o.id WHERE o.id=:oid AND og.id=:gid AND o.owner_id=:own LIMIT 1");
-    $chk->execute(['oid' => $orderId, 'gid' => $groupId, 'own' => $ownerId]);
-    if (!$chk->fetch()) throw new RuntimeException('Order/group mismatch');
+    $engine = new OrderEngine($pdo);
+    $res = $engine->removeOrderItem($ownerId, $orderId, $groupId, $itemId);
 
-    $del = $pdo->prepare("DELETE FROM order_items WHERE id=:iid AND order_group_id=:gid AND owner_id=:own LIMIT 1");
-    $del->execute(['iid' => $itemId, 'gid' => $groupId, 'own' => $ownerId]);
+    if ($returnMode === 'html') {
+        if (!empty($res['ok'])) {
+            $_SESSION['flash_ok'] = 'Pozycja została usunięta.';
+            $back = $_POST['return_to'] ?? ("/admin/orders/view.php?id={$orderId}&group_id={$groupId}#group-{$groupId}");
+        } else {
+            $_SESSION['flash_error'] = 'Nie udało się usunąć pozycji: ' . (($res['sql_msg'] ?? $res['message'] ?? 'unknown'));
+            $back = $_POST['return_to'] ?? ("/admin/orders/view.php?id={$orderId}&group_id={$groupId}");
+        }
+        header('Location: ' . $back);
+        exit;
+    }
 
-    wlog("item_remove item=$itemId order=$orderId");
-    $pdo->commit();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($res);
 } catch (Throwable $e) {
-    $pdo->rollBack();
-    logg('error', 'orders.item_remove', $e->getMessage(), ['order_id' => $orderId, 'group_id' => $groupId, 'item_id' => $itemId]);
+    if ($returnMode === 'html') {
+        $_SESSION['flash_error'] = 'Błąd: ' . $e->getMessage();
+        $back = $_POST['return_to'] ?? ("/admin/orders/view.php?id={$orderId}&group_id={$groupId}");
+        header('Location: ' . $back);
+        exit;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(400);
+    echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
 }
-
-header('Location: /admin/orders/view.php?id=' . (int)$orderId . '&tab=overview');
-exit;

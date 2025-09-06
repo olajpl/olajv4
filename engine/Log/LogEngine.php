@@ -7,13 +7,6 @@ namespace Engine\Log;
 use PDO;
 use Throwable;
 
-/**
- * LogEngine — lekki, odporny logger do tabeli `logs` (z fallbackami).
- *
- * API:
- *  - statycznie: LogEngine::write($pdo, $level, $channel, $event, $ctx?, $extra?)
- *  - instancyjnie: LogEngine::boot($pdo, $ownerId)->info($channel, $event, $ctx?, $extra?)
- */
 final class LogEngine
 {
     private PDO $pdo;
@@ -21,6 +14,7 @@ final class LogEngine
     /** @var array<string,bool> */
     private array $tableExistsCache = [];
 
+    // ——— Konstrukcja ——————————————————————————
     private function __construct(PDO $pdo, ?int $ownerId)
     {
         $this->pdo = $pdo;
@@ -30,21 +24,17 @@ final class LogEngine
         $this->pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
     }
 
-    /** Fabryka dla silników */
     public static function boot(PDO $pdo, ?int $ownerId = null): self
     {
         return new self($pdo, $ownerId);
     }
 
-    /** Alternatywna fabryka (równoważna) */
     public static function instance(PDO $pdo, ?int $ownerId = null): self
     {
         return new self($pdo, $ownerId);
     }
 
-    /**
-     * Statyczny zapis — wygodne do użycia w globalnym logg().
-     */
+    // ——— Statyczny zapis (dla globalnego logg()) ————————
     public static function write(?PDO $pdo, string $level, string $channel, string $event, array $context = [], array $extra = []): void
     {
         try {
@@ -58,10 +48,12 @@ final class LogEngine
                 ));
                 return;
             }
-            $ownerId = self::extractInt($ctx, 'owner_id', 'ownerId')
-         ?? self::extractInt($extra, 'owner_id', 'ownerId')
-         ?? $this->ownerId
-         ?? null;
+
+            $ownerId =
+                self::extractInt($context, 'owner_id', 'ownerId')
+                ?? self::extractInt($extra, 'owner_id', 'ownerId')
+                ?? (isset($GLOBALS['__olaj_owner_id']) ? (int)$GLOBALS['__olaj_owner_id'] : null)
+                ?? null;
 
             self::boot($pdo, $ownerId)->writeInternal($level, $channel, $event, $context, $extra);
         } catch (Throwable $e) {
@@ -75,7 +67,7 @@ final class LogEngine
         }
     }
 
-    // ── Public API instancyjne ─────────────────────────────────
+    // ——— Public API instancyjne ————————————————
     public function debug(string $channel, string $event, array $ctx = [], array $extra = []): void
     {
         $this->writeInternal('debug', $channel, $event, $ctx, $extra);
@@ -103,10 +95,10 @@ final class LogEngine
         $this->writeInternal('error', $channel, $event, $ctx, $extra);
     }
 
-    // ── Core ───────────────────────────────────────────────────
+    // ——— Core ————————————————————————————————
     private function writeInternal(string $level, string $channel, string $event, array $ctx, array $extra): void
     {
-        // 1) ID-ki z ctx (snake/camel), potem z konstruktora
+        // 1) ID-ki
         $ownerId      = self::extractInt($ctx, 'owner_id', 'ownerId') ?? $this->ownerId ?? null;
         $userId       = self::extractInt($ctx, 'user_id', 'userId');
         $clientId     = self::extractInt($ctx, 'client_id', 'clientId');
@@ -124,17 +116,21 @@ final class LogEngine
         $trace     = (string)($ctx['trace']      ?? $extra['trace']      ?? '');
         $message   = (string)($ctx['message']    ?? $extra['message']    ?? $event);
 
-        // IP → jeśli masz VARBINARY(16), to przekaż binarkę; jeśli VARCHAR — zostaw string
+        // 3) Przytnij zbyt długie pola, by nie blokować INSERT
+        $message = $this->clip($message, 2048);
+        $trace   = $this->clip($trace, 16384);
+
+        // 4) JSON kontekstu (bezpiecznie)
+        $contextJson = $this->encodeJsonSafe($ctx, 16384);
+
+        // 5) IP → bin/str
         $ipParam = null;
         if ($ip !== '') {
             $bin = @inet_pton($ip);
-            $ipParam = $bin !== false ? $bin : $ip; // wspiera oba typy kolumn
+            $ipParam = $bin !== false ? $bin : $ip;
         }
 
-        // 3) JSON kontekstu
-        $contextJson = $ctx ? json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
-
-        // 4) INSERT do logs
+        // 6) INSERT do logs
         if ($this->tableExists('logs')) {
             try {
                 $sql = "INSERT INTO `logs`
@@ -160,7 +156,7 @@ final class LogEngine
                     ':context_json'   => $contextJson,
                     ':trace'          => $trace !== '' ? $trace : null,
                     ':request_id'     => $requestId !== '' ? $requestId : null,
-                    ':source'         => $source !== '' ? $source : 'engine',
+                    ':source'         => self::normalizeSource($source ?: null),
                     ':ip'             => $ipParam ?: null,
                     ':user_agent'     => $ua !== '' ? $ua : null,
                     ':flags'          => $flags !== '' ? $flags : null,
@@ -178,7 +174,7 @@ final class LogEngine
             }
         }
 
-        // 5) Fallback — audit_logs
+        // 7) Fallback — audit_logs
         if ($this->tableExists('audit_logs')) {
             try {
                 $sql = "INSERT INTO `audit_logs`
@@ -191,7 +187,7 @@ final class LogEngine
                     ':level'    => $level,
                     ':message'  => $message,
                     ':context'  => $contextJson,
-                    ':source'   => $source !== '' ? $source : 'engine',
+                    ':source'   => self::normalizeSource($source ?: null),
                     ':owner_id' => $ownerId ?: null,
                     ':user_id'  => $userId  ?: null,
                 ]);
@@ -207,7 +203,7 @@ final class LogEngine
             }
         }
 
-        // 6) Ostateczność
+        // 8) Ostateczność
         @error_log(sprintf(
             '[%s][%s] %s %s',
             $level,
@@ -217,8 +213,7 @@ final class LogEngine
         ));
     }
 
-    // ── Utils ───────────────────────────────────────────────────
-
+    // ——— Utils ————————————————————————————————
     private function tableExists(string $table): bool
     {
         if (isset($this->tableExistsCache[$table])) {
@@ -235,9 +230,10 @@ final class LogEngine
     private function defaultExtra(?int $ownerId): array
     {
         return [
-           'owner_id' => $ownerId ?? ($GLOBALS['__olaj_owner_id'] ?? null),
+            'owner_id'   => $ownerId ?? (isset($GLOBALS['__olaj_owner_id']) ? (int)$GLOBALS['__olaj_owner_id'] : null),
             'request_id' => $_SERVER['HTTP_X_REQUEST_ID'] ?? ($GLOBALS['__olaj_request_id'] ?? null),
-            'source'     => 'engine',
+            // Domyślnie „panel”; możesz wystawiać X-Source: api w endpointach
+            'source'     => self::normalizeSource($_SERVER['HTTP_X_SOURCE'] ?? 'panel'),
             'ip'         => $_SERVER['REMOTE_ADDR']     ?? null,
             'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ];
@@ -249,5 +245,36 @@ final class LogEngine
         if ($v === null || $v === '' || !is_numeric($v)) return null;
         $i = (int)$v;
         return $i > 0 ? $i : null;
+    }
+
+    /** Przytnij string do limitu (z sufiksem „…”) */
+    private function clip(?string $s, int $limit): ?string
+    {
+        if ($s === null) return null;
+        if (mb_strlen($s, 'UTF-8') <= $limit) return $s;
+        return mb_substr($s, 0, max(0, $limit - 1), 'UTF-8') . '…';
+    }
+
+    /** JSON encoding z limitem długości i bezpiecznym fallbackiem */
+    private function encodeJsonSafe(array $data, int $limit): ?string
+    {
+        if (!$data) return null;
+        try {
+            $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json === false) {
+                $json = '{"_json_error":' . json_last_error() . '}';
+            }
+        } catch (Throwable $__) {
+            $json = '{"_json_error":"exception"}';
+        }
+        return $this->clip($json, $limit);
+    }
+
+    /** Normalizacja źródła do enuma w bazie */
+    private static function normalizeSource(?string $src): string
+    {
+        $src = strtolower((string)$src);
+        $allowed = ['panel','shop','webhook','cron','cli','api'];
+        return in_array($src, $allowed, true) ? $src : 'panel';
     }
 }

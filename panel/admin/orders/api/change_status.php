@@ -2,11 +2,9 @@
 // admin/orders/api/change_status.php — Olaj.pl V4
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
-require_once __DIR__ . '/../../../engine/Enum/OrderStatus.php';
-require_once __DIR__ . '/../../../engine/Orders/OrderEngine.php';
+require_once __DIR__ . '/../../../bootstrap.php';
+require_once __DIR__ . '/../../../../engine/Enum/OrderStatus.php';
+require_once __DIR__ . '/../../../../engine/Orders/OrderEngine.php';
 
 use Engine\Enum\OrderStatus;
 use Engine\Orders\OrderEngine;

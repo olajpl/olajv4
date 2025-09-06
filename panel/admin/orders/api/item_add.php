@@ -1,76 +1,122 @@
 <?php
-
 declare(strict_types=1);
+require_once __DIR__ . '/../../../../bootstrap.php';
 
-require_once __DIR__ . '/../../../includes/auth.php';
-require_once __DIR__ . '/../../../includes/db.php';
-require_once __DIR__ . '/../../../includes/log.php';
+use Engine\Orders\OrderEngine;
 
 if (session_status() === PHP_SESSION_NONE) session_start();
+
+/* ───────── Tryb odpowiedzi: JSON (default) lub HTML (redirect) ───────── */
+$returnMode = 'json';
+if (
+    (isset($_POST['return']) && $_POST['return'] === 'html')
+    || (!empty($_POST['return_to']))
+    || (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'text/html') !== false
+        && (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) !== 'xmlhttprequest'))
+) {
+    $returnMode = 'html';
+}
+if ($returnMode === 'json') {
+    header('Content-Type: application/json; charset=utf-8');
+}
+
+/* ───────── Autoryzacja + CSRF ───────── */
 $ownerId = (int)($_SESSION['user']['owner_id'] ?? 0);
-$userId  = (int)($_SESSION['user']['id'] ?? 0);
-
-$csrf      = $_POST['csrf'] ?? '';
-$orderId   = (int)($_POST['order_id'] ?? 0);
-$groupId   = (int)($_POST['group_id'] ?? 0);
-
-$name      = trim((string)($_POST['name'] ?? ''));
-$code      = trim((string)($_POST['code'] ?? ''));
-$qty       = (float)($_POST['qty'] ?? 0);
-$price     = (float)($_POST['unit_price'] ?? 0);
-$vat       = (float)($_POST['vat_rate'] ?? 23.00);
-
-if (!$ownerId || !$orderId || !$groupId || $name === '' || $qty <= 0 || $price < 0) {
-    http_response_code(400);
-    exit('Bad request');
+$csrf    = $_POST['csrf'] ?? '';
+if (!$ownerId) {
+    $msg = 'Unauthorized';
+    if ($returnMode === 'html') { $_SESSION['flash_error'] = $msg; header('Location: /admin/'); exit; }
+    http_response_code(401); echo json_encode(['ok'=>false,'error'=>$msg]); exit;
 }
 if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
-    http_response_code(403);
-    exit('Forbidden');
+    $msg = 'Forbidden';
+    if ($returnMode === 'html') { $_SESSION['flash_error'] = $msg; header('Location: /admin/'); exit; }
+    http_response_code(403); echo json_encode(['ok'=>false,'error'=>$msg]); exit;
 }
 
+/* ───────── Wejście ─────────
+   Minimalny zestaw: name, qty, unit_price, vat_rate, oraz client_id LUB (order_id + group_id)
+*/
+$orderId   = (int)($_POST['order_id'] ?? 0);
+$groupId   = (int)($_POST['order_group_id'] ?? ($_POST['group_id'] ?? 0));
+$clientId  = (int)($_POST['client_id'] ?? 0);
+$productId = isset($_POST['product_id']) && $_POST['product_id'] !== '' ? (int)$_POST['product_id'] : null;
+
+$name       = trim((string)($_POST['name'] ?? ''));
+$qty        = isset($_POST['qty']) ? (float)$_POST['qty'] : 1.0;
+$unitPrice  = isset($_POST['unit_price']) ? (float)$_POST['unit_price'] : 0.0;
+$vatRate    = isset($_POST['vat_rate']) ? (float)$_POST['vat_rate'] : 23.0;
+$sku        = (string)($_POST['sku'] ?? '');
+$sourceType = (string)($_POST['source_type'] ?? 'parser');   // enum: order_item_source
+$channel    = (string)($_POST['channel'] ?? '');             // 'shop'|'messenger'|'live'|'admin'...
+
+/* Jeżeli nie podano client_id, spróbuj pobrać go z orders */
+if (!$clientId && $orderId > 0) {
+    $st = $pdo->prepare("SELECT client_id FROM orders WHERE id = :oid AND owner_id = :own LIMIT 1");
+    $st->execute([':oid'=>$orderId, ':own'=>$ownerId]);
+    $clientId = (int)($st->fetchColumn() ?: 0);
+}
+
+/* Walidacja podstawowa */
+if ($clientId <= 0 || $name === '' || $qty <= 0) {
+    $msg = 'Invalid payload';
+    if ($returnMode === 'html') {
+        $_SESSION['flash_error'] = $msg;
+        $back = $_POST['return_to'] ?? ($orderId ? "/admin/orders/view.php?id={$orderId}&group_id={$groupId}" : "/admin/orders/");
+        header('Location: ' . $back); exit;
+    }
+    http_response_code(422); echo json_encode(['ok'=>false,'error'=>$msg]); exit;
+}
+
+/* ───────── Biznes: dodanie pozycji ───────── */
 try {
-    $pdo->beginTransaction();
+    $engine = new OrderEngine($pdo);
 
-    // sprawdź uprawnienia i czy checkout nie zamknięty
-    $stmt = $pdo->prepare("SELECT o.id, og.checkout_completed
-                         FROM orders o
-                         JOIN order_groups og ON og.order_id=o.id
-                         WHERE o.id=:oid AND og.id=:gid AND o.owner_id=:own LIMIT 1");
-    $stmt->execute(['oid' => $orderId, 'gid' => $groupId, 'own' => $ownerId]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row) throw new RuntimeException('Order/group mismatch');
-    if ((int)$row['checkout_completed'] === 1) throw new RuntimeException('Checkout completed');
+    $payload = [
+        'owner_id'    => $ownerId,
+        'client_id'   => $clientId,
+        'product_id'  => $productId,
+        'name'        => $name,
+        'qty'         => $qty,
+        'unit_price'  => $unitPrice,
+        'vat_rate'    => $vatRate,
+        'sku'         => $sku,
+        'source_type' => $sourceType,
+        'channel'     => $channel,
+    ];
 
-    $line = round($qty * $price, 2);
-    $vatValue = round($line * $vat / (100.0 + $vat), 2);
+    $res = $engine->addOrderItem($payload);
 
-    $ins = $pdo->prepare("
-    INSERT INTO order_items
-      (owner_id, order_id, order_group_id, product_id, code, name, qty, unit_price, vat_rate, line_total_gross, vat_value, source_type, source_channel, created_at, updated_at)
-    VALUES
-      (:own, :oid, :gid, NULL, :code, :name, :qty, :price, :vat, :line, :vat_value, 'admin', 'admin', NOW(), NOW())
-  ");
-    $ins->execute([
-        'own' => $ownerId,
-        'oid' => $orderId,
-        'gid' => $groupId,
-        'code' => $code ?: null,
-        'name' => $name,
-        'qty' => $qty,
-        'price' => $price,
-        'vat' => $vat,
-        'line' => $line,
-        'vat_value' => $vatValue
-    ]);
+    if ($returnMode === 'html') {
+        if (!empty($res['ok'])) {
+            $_SESSION['flash_ok'] = 'Pozycja została dodana.';
+            // użyj order_id/group_id z wyniku engine (mogą się różnić od wejściowych)
+            $back = $_POST['return_to']
+                ?? ("/admin/orders/view.php?id={$res['order_id']}&group_id={$res['order_group_id']}#item-{$res['order_item_id']}");
+        } else {
+            $err = $res['sql_msg'] ?? $res['message'] ?? $res['reason'] ?? 'unknown';
+            $_SESSION['flash_error'] = 'Nie udało się dodać pozycji: ' . $err;
+            $fallbackOrder = $orderId ?: ($res['order_id'] ?? 0);
+            $fallbackGroup = $groupId ?: ($res['order_group_id'] ?? 0);
+            $back = $_POST['return_to']
+                ?? ($fallbackOrder ? "/admin/orders/view.php?id={$fallbackOrder}&group_id={$fallbackGroup}" : "/admin/orders/");
+        }
+        header('Location: ' . $back);
+        exit;
+    }
 
-    wlog("item_add gid=$groupId name=$name qty=$qty price=$price user=$userId");
-    $pdo->commit();
+    // JSON
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($res, JSON_UNESCAPED_UNICODE);
+
 } catch (Throwable $e) {
-    $pdo->rollBack();
-    logg('error', 'orders.item_add', $e->getMessage(), ['order_id' => $orderId, 'group_id' => $groupId]);
+    if ($returnMode === 'html') {
+        $_SESSION['flash_error'] = 'Błąd: ' . $e->getMessage();
+        $back = $_POST['return_to'] ?? ($orderId ? "/admin/orders/view.php?id={$orderId}&group_id={$groupId}" : "/admin/orders/");
+        header('Location: ' . $back);
+        exit;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(400);
+    echo json_encode(['ok'=>false,'error'=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
-
-$back = '/admin/orders/view.php?id=' . $orderId . '&tab=overview';
-header('Location: ' . $back);
-exit;

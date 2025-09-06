@@ -1,3 +1,4 @@
+
 <?php /* Toggle rozwijania grup oraz formularza "Dodaj pozycję" */ ?>
 <script>
     document.addEventListener('click', function(e) {

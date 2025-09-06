@@ -2,9 +2,7 @@
 // admin/raffles/index.php — Olaj.pl V4 (Losowania / Raffles)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php'; // centralny olaj_v4_logger
+require_once __DIR__ . '/../../../bootstrap.php';
 
 if (!function_exists('h')) {
   function h($s)

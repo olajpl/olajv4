@@ -2,10 +2,8 @@
 // admin/products/edit.php — Panel edycji produktu z insightami + upload obrazka (Olaj.pl V4)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php';
-require_once __DIR__ . '/../../engine/Product/ProductEngine.php';
+require_once __DIR__ . '/../../../bootstrap.php';
+require_once __DIR__ . '/../../../engine/Product/ProductEngine.php';
 
 use Engine\Product\ProductEngine;
 use Engine\Log\LogEngine;

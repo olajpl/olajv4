@@ -2,8 +2,7 @@
 // 1. opis czynności lub funkcji
 // Load/save ustawień globalnych loggera (suadmin)
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__.'/../../../bootstrap.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $is_suadmin = ($_SESSION['user']['role'] ?? '') === 'suadmin';

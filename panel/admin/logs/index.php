@@ -2,8 +2,7 @@
 // admin/logs/index.php
 // 1. opis czynności lub funkcji
 // Panel „Mocne Logi”: filtry listy + prosty panel ustawień (suadmin).
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__.'/../../../bootstrap.php';
 
 require_once __DIR__ . '/../../layout/layout_header.php';
 

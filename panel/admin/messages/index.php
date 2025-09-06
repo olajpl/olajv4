@@ -2,8 +2,7 @@
 // admin/messages/index.php — Lista konwersacji klientów w stylu FB (Olaj.pl V4)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php'
 
 $ownerId = (int)($_SESSION['user']['owner_id'] ?? 0);
 if ($ownerId <= 0) {

@@ -2,15 +2,13 @@
 // admin/orders/index.php — Lista zamówień (Olaj.pl V4, engine-first)
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php'; // centralny logger (po db.php!)
+require_once __DIR__ . '/../../../bootstrap.php';
 
 require_once __DIR__ . '/../../layout/layout_header.php';
 
 // ==== ENGINEs / ENUMs ====
-require_once __DIR__ . '/../../engine/Orders/ViewRenderer.php';
-require_once __DIR__ . '/../../engine/Enum/OrderStatus.php';
+require_once __DIR__ . '/../../../engine/Orders/ViewRenderer.php';
+require_once __DIR__ . '/../../../engine/Enum/OrderStatus.php';
 
 use Engine\Orders\ViewRenderer;
 use Engine\Enum\OrderStatus;
