@@ -3,9 +3,7 @@
 // Centrum Dostawców — lista faktur zakupowych per dostawca z licznikami statusów
 // Filtry: dostawca, status; akcje: Otwórz fakturę, (opcjonalnie) Batch „Generuj kody”
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../layout/top_panel.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../layout/layout_header.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();

@@ -395,7 +395,13 @@
   async function checkAvailability() {
     const hint = qs('#availabilityHint');
     const isCustom = qs('#is_custom')?.checked;
-    const productId = (window.jQuery && jQuery('#product_search').val()) || qs('#product_search')?.value;
+    const productId = String((window.jQuery && jQuery('#product_search').val()) || qs('#product_search')?.value || '').trim();
+if (!hint) return;
+if (isCustom || productId === '' || isNaN(productId)) {
+  hint.classList.add('hidden'); 
+  return;
+}
+
 
     if (!hint) return;
     if (isCustom || !productId) { hint.classList.add('hidden'); return; }
@@ -407,14 +413,18 @@
       const liveId = window.OLAJ_LIVE?.liveId || '';
       const res = await postForm(CFG.endpoints.availability, { product_id: productId, qty, live_id: liveId });
       // Zakładamy odpowiedź { ok:true, available:int, stock:int, reserved:int }
-      if (res && (res.ok || res.success)) {
-        hint.textContent = `Dostępnych: ${res.available ?? res.stock ?? '?'} (w tym już zarezerw.: ${res.reserved ?? 0})`;
-      } else {
-        hint.textContent = 'Brak danych o dostępności.';
-      }
-    } catch {
-      hint.textContent = 'Nie udało się sprawdzić dostępności.';
-    }
+      if (res && res.reason === 'custom_product') {
+  hint.textContent = 'Produkt niestandardowy — dostępność: ∞';
+} else if (res && res.ok) {
+  hint.textContent = `✅ Dostępnych: ${res.available ?? '?'} (zarezerw.: ${res.reserved ?? 0})`;
+} else if (res && res.reason === 'not_found') {
+  hint.textContent = '❌ Produkt nie znaleziony.';
+} else if (res && res.reason === 'insufficient') {
+  hint.textContent = `⚠️ Tylko ${res.available ?? 0} dostępnych (potrzeba ${res.requested ?? '?'})`;
+} else {
+  hint.textContent = 'Brak danych o dostępności.';
+}
+
   }
 
   function bindAvailability() {

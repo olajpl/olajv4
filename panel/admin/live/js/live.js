@@ -240,6 +240,54 @@ function formatProductResult(p) {
         if (!data?.success) throw new Error(data?.error || 'Nie udało się dodać.');
 
         toast('Dodano pozycję/pozycje.');
+		async function checkAvailabilityLive() {
+  const hint = document.getElementById('availabilityHint');
+  const isCustom = document.getElementById('toggleCustom')?.checked;
+  const productId = window.jQuery ? jQuery('#product_search').val() : null;
+
+  if (!hint) return;
+  if (isCustom || !productId || isNaN(productId)) {
+    hint.classList.add('hidden');
+    return;
+  }
+
+  const qty = [...document.querySelectorAll('input[name="qty[]"]')]
+    .map(i => parseInt(i.value, 10))
+    .filter(n => !isNaN(n))
+    .reduce((a, b) => a + b, 0) || 1;
+
+  hint.classList.remove('hidden');
+  hint.textContent = 'Sprawdzam dostępność…';
+
+  try {
+    const res = await fetch(CFG.endpoints.availability, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        product_id: String(productId),
+        qty: String(qty),
+        live_id: String(CFG.liveId),
+        owner_id: String(CFG.ownerId)
+      }).toString()
+    });
+    const data = await res.json();
+
+    if (data?.reason === 'custom_product') {
+      hint.textContent = 'Produkt niestandardowy — dostępność: ∞';
+    } else if (data?.ok) {
+      hint.textContent = `✅ Dostępnych: ${data.available ?? '?'} (zarezerw.: ${data.reserved ?? 0})`;
+    } else if (data?.reason === 'not_found') {
+      hint.textContent = '❌ Produkt nie znaleziony.';
+    } else if (data?.reason === 'insufficient') {
+      hint.textContent = `⚠️ Tylko ${data.available ?? 0} dostępnych (potrzeba ${data.requested ?? '?'})`;
+    } else {
+      hint.textContent = 'Brak danych o dostępności.';
+    }
+  } catch (e) {
+    hint.textContent = 'Nie udało się sprawdzić dostępności.';
+  }
+}
+
         resetAddForm();
         await fetchAndRender();
         await fetchStats();
@@ -249,6 +297,13 @@ function formatProductResult(p) {
       }
     });
   }
+function debounce(fn, wait = 400) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
 
   // ---------- Lista klientów (HTML akordeony) ----------
   async function fetchAndRender(){

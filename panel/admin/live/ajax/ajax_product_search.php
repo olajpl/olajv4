@@ -19,55 +19,53 @@ try {
   if ($q === '') { echo json_encode(['results'=>[]], JSON_UNESCAPED_UNICODE); exit; }
 
   // — 100% zgodne z Twoją tabelą products —
-  $searchCols = ['p.name','p.code','p.sku','p.ean','p.twelve_nc'];
+  // --- ZAMIANA TWOJEGO BLOKU NA TEN ---
 
-  // scoring: exact > prefix > substring
-  $scoreParts = [];
-  foreach ($searchCols as $c) {
-    $scoreParts[] = "IF($c = :eq, 3, 0)";
-    $scoreParts[] = "IF($c LIKE :pref ESCAPE '\\\\', 2, 0)";
-    $scoreParts[] = "IF($c LIKE :sub  ESCAPE '\\\\', 1, 0)";
-  }
-  $scoreExpr = '(' . implode(' + ', $scoreParts) . ') AS score';
+$searchCols = ['p.name','p.code','p.sku','p.ean','p.twelve_nc'];
 
-  $whereLike = [];
-  foreach ($searchCols as $i=>$c) { $whereLike[] = "$c LIKE :q$i ESCAPE '\\\\'"; }
+// scoring: exact > prefix > substring (unikalne placeholdery per kolumna)
+$scoreParts = [];
+$whereLike  = [];
+foreach ($searchCols as $i => $c) {
+  $scoreParts[] = "IF($c = :eq$i, 3, 0)";
+  $scoreParts[] = "IF($c LIKE :pref$i ESCAPE '\\\\', 2, 0)";
+  $scoreParts[] = "IF($c LIKE :sub$i  ESCAPE '\\\\', 1, 0)";
+  $whereLike[]  = "$c LIKE :q$i ESCAPE '\\\\'";
+}
+$scoreExpr = '(' . implode(' + ', $scoreParts) . ') AS score';
 
-  $nameWithSku = "CONCAT(p.name, CASE WHEN COALESCE(p.sku,'')<>'' THEN CONCAT(' (',p.sku,')') ELSE '' END)";
+$nameWithSku = "CONCAT(p.name, CASE WHEN COALESCE(p.sku,'')<>'' THEN CONCAT(' (',p.sku,')') ELSE '' END)";
 
-  $sql = "
-    SELECT
-      p.id,
-      p.name,
-      p.code,
-      p.sku,
-      p.ean,
-      p.twelve_nc,
-      p.unit_price       AS price,
-      p.vat_rate,
-      p.stock_cached,
-      p.stock_reserved,                -- (masz int; zostawiam)
-      p.stock_reserved_cached,
-      p.stock_available,               -- GENERATED (cached - reserved_cached)
-      $nameWithSku AS text,
-      $scoreExpr
-    FROM products p
-    WHERE 1=1
-      " . ($owner_id>0 ? " AND p.owner_id = :oid " : "") . "
-      AND p.deleted_at IS NULL
-      AND p.active = 1
-      AND p.is_active = 1
-      AND (" . implode(' OR ', $whereLike) . ")
-    ORDER BY score DESC, p.name ASC
-    LIMIT 20
-  ";
+$sql = "
+  SELECT
+    p.id, p.name, p.code, p.sku, p.ean, p.twelve_nc,
+    p.unit_price AS price, p.vat_rate,
+    p.stock_cached, p.stock_reserved, p.stock_reserved_cached, p.stock_available,
+    $nameWithSku AS text,
+    $scoreExpr
+  FROM products p
+  WHERE 1=1
+    " . ($owner_id>0 ? " AND p.owner_id = :oid " : "") . "
+    AND p.deleted_at IS NULL
+    AND COALESCE(p.active,1) = 1
+    AND COALESCE(p.is_active,1) = 1
+    AND (" . implode(' OR ', $whereLike) . ")
+  ORDER BY score DESC, p.name ASC
+  LIMIT 20
+";
 
-  $st = $pdo->prepare($sql);
-  if ($owner_id>0) $st->bindValue(':oid', $owner_id, PDO::PARAM_INT);
-  foreach ($searchCols as $i=>$_) { $st->bindValue(":q$i", like_any($q), PDO::PARAM_STR); }
-  $st->bindValue(':eq',   $q,            PDO::PARAM_STR);
-  $st->bindValue(':pref', like_pref($q), PDO::PARAM_STR);
-  $st->bindValue(':sub',  like_any($q),  PDO::PARAM_STR);
+$st = $pdo->prepare($sql);
+if ($owner_id>0) $st->bindValue(':oid', $owner_id, PDO::PARAM_INT);
+
+foreach ($searchCols as $i => $_) {
+  // LIKE dla filtra kolumn (substring)
+  $st->bindValue(":q$i",    '%'.like_escape($q).'%', PDO::PARAM_STR);
+  // scoring
+  $st->bindValue(":eq$i",    $q,                        PDO::PARAM_STR);
+  $st->bindValue(":pref$i",  like_escape($q).'%',       PDO::PARAM_STR);
+  $st->bindValue(":sub$i",   '%'.like_escape($q).'%',   PDO::PARAM_STR);
+}
+
 
   $st->execute();
   $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -108,7 +106,26 @@ try {
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
 
 } catch (Throwable $e) {
-  // pokaż prawdziwy powód gdy ?debug=1
-  $msg = $DEBUG ? ('DB error: '.$e->getMessage()) : 'Błąd wyszukiwania produktów';
-  echo json_encode(['results'=>[], 'error'=>$msg], JSON_UNESCAPED_UNICODE);
+  // 🔎 pełny wgląd po ?debug=1
+  if ($DEBUG) {
+    echo json_encode([
+      'results' => [],
+      'error'   => 'DB error: ' . $e->getMessage(),
+      'trace'   => $e->getTraceAsString()
+    ], JSON_UNESCAPED_UNICODE);
+    return;
+  }
+
+  // 📝 log do centralnego loggera (jeśli masz includes/log.php)
+  if (function_exists('logg')) {
+    logg('error', 'live.product_search', 'Błąd wyszukiwarki produktów', [
+      'owner_id' => (int)($_SESSION['user']['owner_id'] ?? 0),
+      'q'        => $q ?? null,
+    ], [
+      'exception' => $e->getMessage(),
+      'trace'     => $e->getTraceAsString(),
+    ]);
+  }
+  echo json_encode(['results'=>[], 'error'=>'Błąd wyszukiwania produktów'], JSON_UNESCAPED_UNICODE);
 }
+

@@ -1,5 +1,5 @@
 <?php
-
+// engine/Live/LiveEngine.php — Olaj.pl V4 (LIVE + Stock + Rezerwacje + Finalizacja)
 declare(strict_types=1);
 
 namespace Engine\Live;
@@ -7,151 +7,236 @@ namespace Engine\Live;
 use PDO;
 use Throwable;
 use RuntimeException;
-use Engine\Enum\OrderItemSource;
-use Engine\Orders\OrderEngine;
+use Engine\Log\LogEngine;
+use Engine\Enum\OrderItemSourceType;
 use Engine\Stock\StockReservationEngine;
+use Engine\Orders\OrderEngine;
 
 final class LiveEngine
 {
-    // …─── DOTYCHCZASOWE: addProduct, finalizeBatch ───…
+    private PDO $pdo;
+    private int $ownerId;
 
-    public static function getLiveStream(PDO $pdo, int $liveId, int $ownerId): ?array
+    public function __construct(PDO $pdo, int $ownerId)
     {
-        $sql = "SELECT * FROM live_streams WHERE id = :id AND owner_id = :owner_id LIMIT 1";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute(['id' => $liveId, 'owner_id' => $ownerId]);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $this->pdo     = $pdo;
+        $this->ownerId = $ownerId;
+        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $this->pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+        LogEngine::boot($this->pdo, $this->ownerId)->debug('live.engine', 'Boot', [], ['context' => 'live']);
     }
 
-    // ADD (rozbudowana)
-    public static function addComment(PDO $pdo, array $row): int
+    public static function boot(PDO $pdo, int $ownerId): self
     {
-        $sql = "INSERT INTO live_comments (
-                owner_id, live_stream_id, order_id, client_id,
-                source, external_comment_id, parent_external_id,
-                message, attachments_json, is_command, command_type,
-                parsed_product_id, parsed_quantity,
-                sentiment, moderation, processed, created_at
-            ) VALUES (
-                :owner_id, :live_stream_id, :order_id, :client_id,
-                :source, :external_comment_id, :parent_external_id,
-                :message, :attachments_json, :is_command, :command_type,
-                :parsed_product_id, :parsed_quantity,
-                :sentiment, :moderation, :processed, NOW()
-            )";
+        return new self($pdo, $ownerId);
+    }
 
-        $stmt = $pdo->prepare($sql);
+    /**
+     * Dodaje pozycję do live_temp.
+     * Jeśli to produkt katalogowy, robi snapshot name/sku/price/vat z products,
+     * gdy pola z frontu są puste.
+     */
+    public function addProduct(
+    int $liveId,
+    int $clientId,
+    ?int $productId,
+    string $name,
+    float $qty,
+    ?int $groupId = null,
+    ?string $sku = null,
+    ?float $price = null,
+    ?float $vatRate = null,
+    ?int $operatorUserId = null
+): void {
+    $this->pdo->beginTransaction();
+    try {
+        // 1) Normalizacja „pustych” wartości
+        $snapName  = trim($name ?? '');
+        $snapSku   = is_string($sku) ? trim($sku) : null;
+        $snapPrice = $price;
+        $snapVat   = $vatRate;
+
+        // helper: czy nazwa to placeholder typu "Produkt", "Product", itp.
+        $isPlaceholder = function(string $s): bool {
+            $s = mb_strtolower(trim($s));
+            return $s === '' || in_array($s, ['produkt', 'product', 'item', 'towar'], true);
+        };
+
+        // 2) Snapshot z products dla katalogowych (tylko gdy braki / placeholdery)
+        if ($productId !== null && $productId > 0) {
+            $ps = $this->pdo->prepare("
+                SELECT name, sku, unit_price, vat_rate
+                  FROM products
+                 WHERE id = :pid AND owner_id = :oid
+                 LIMIT 1
+            ");
+            $ps->execute([':pid' => $productId, ':oid' => $this->ownerId]);
+            if ($prod = $ps->fetch(PDO::FETCH_ASSOC)) {
+                if ($isPlaceholder($snapName))                   $snapName  = (string)($prod['name'] ?? '');
+                if ($snapSku === null || $snapSku === '')        $snapSku   = (string)($prod['sku'] ?? '');
+                if ($snapPrice === null)                         $snapPrice = isset($prod['unit_price']) ? (float)$prod['unit_price'] : null;
+                if ($snapVat   === null)                         $snapVat   = isset($prod['vat_rate'])   ? (float)$prod['vat_rate']   : null;
+            }
+        }
+
+        // 3) Domyślne VAT/cena
+        if ($snapVat === null)   $snapVat = 23.0;
+        if ($snapPrice === null) $snapPrice = 0.0;
+
+        // 4) INSERT do live_temp (ze znormalizowanymi polami)
+        $stmt = $this->pdo->prepare("
+            INSERT INTO live_temp
+                (owner_id, live_id, client_id, operator_user_id,
+                 product_id, name, sku, qty, group_id, price, vat_rate,
+                 source_type, reservation_id, transferred_at,
+                 target_order_id, target_group_id, batch_id, flags, note, metadata, created_at)
+            VALUES
+                (:oid, :live, :cid, :opid,
+                 :pid, :name, :sku, :qty, :gid, :price, :vat,
+                 :stype, NULL, NULL,
+                 NULL, NULL, NULL, '', NULL, NULL, NOW())
+        ");
         $stmt->execute([
-            'owner_id' => $row['owner_id'],
-            'live_stream_id' => $row['live_stream_id'],
-            'order_id' => $row['order_id'] ?? null,
-            'client_id' => $row['client_id'] ?? null,
-            'source' => $row['source'] ?? 'manual',
-            'external_comment_id' => $row['external_comment_id'] ?? null,
-            'parent_external_id' => $row['parent_external_id'] ?? null,
-            'message' => trim((string)($row['message'] ?? '')),
-            'attachments_json' => $row['attachments_json'] ?? null,
-            'is_command' => $row['is_command'] ?? 0,
-            'command_type' => $row['command_type'] ?? null,
-            'parsed_product_id' => $row['parsed_product_id'] ?? null,
-            'parsed_quantity' => $row['parsed_quantity'] ?? null,
-            'sentiment' => $row['sentiment'] ?? 'neu',
-            'moderation' => $row['moderation'] ?? 'clean',
-            'processed' => $row['processed'] ?? 0,
+            ':oid'   => $this->ownerId,
+            ':live'  => $liveId,
+            ':cid'   => $clientId,
+            ':opid'  => $operatorUserId,
+            ':pid'   => $productId,
+            ':name'  => $snapName,
+            ':sku'   => $snapSku,
+            ':qty'   => $qty,
+            ':gid'   => $groupId,
+            ':price' => $snapPrice,
+            ':vat'   => $snapVat,
+            ':stype' => ($productId !== null ? 'catalog' : 'custom'),
         ]);
 
-        return (int)$pdo->lastInsertId();
+        $liveTempId = (int)$this->pdo->lastInsertId();
+
+        // 5) Rezerwacja tylko dla katalogowych
+        if ($productId !== null) {
+            $reservationId = \Engine\Stock\StockReservationEngine::create(
+                $this->pdo,
+                $this->ownerId,
+                $productId,
+                $clientId,
+                (int)$qty,
+                'live',
+                $liveTempId,
+                $liveId
+            );
+            $this->pdo->prepare("UPDATE live_temp SET reservation_id = :rid WHERE id = :id")
+                ->execute([':rid' => $reservationId, ':id' => $liveTempId]);
+        }
+
+        $this->pdo->commit();
+        \Engine\Log\LogEngine::boot($this->pdo, $this->ownerId)->info('live.add', 'ok', [
+            'live_id'    => $liveId,
+            'client_id'  => $clientId,
+            'product_id' => $productId,
+            'qty'        => $qty,
+        ]);
+    } catch (Throwable $e) {
+        $this->pdo->rollBack();
+        \Engine\Log\LogEngine::boot($this->pdo, $this->ownerId)->error('live.add', 'exception', [
+            'live_id'    => $liveId,
+            'client_id'  => $clientId,
+            'product_id' => $productId,
+            'msg'        => $e->getMessage()
+        ]);
+        throw new RuntimeException('LiveEngine::addProduct failed: ' . $e->getMessage(), 0, $e);
     }
+}
 
 
-    // GET (dla danego streamu)
-    public static function getComments(PDO $pdo, int $ownerId, int $liveStreamId, int $limit = 50): array
-    {
-        $sql = "SELECT * FROM live_comments
-            WHERE owner_id = :owner_id AND live_stream_id = :live_id
-            ORDER BY id DESC LIMIT :limit";
-        $stmt = $pdo->prepare($sql);
-        $stmt->bindValue(':owner_id', $ownerId, PDO::PARAM_INT);
-        $stmt->bindValue(':live_id', $liveStreamId, PDO::PARAM_INT);
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-
-    public static function getAssignedClients(PDO $pdo, int $ownerId, int $liveId): array
-    {
-        $sql = "SELECT lt.client_id, c.name, c.phone, COUNT(*) AS total_products, SUM(lt.qty) AS total_qty
-                  FROM live_temp lt
-             LEFT JOIN clients c ON lt.client_id = c.id
-                 WHERE lt.owner_id = :owner_id AND lt.live_id = :live_id
-              GROUP BY lt.client_id
-              ORDER BY c.name ASC";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute(['owner_id' => $ownerId, 'live_id' => $liveId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    public static function deleteTempProduct(PDO $pdo, int $tempId, int $ownerId): bool
+    /**
+     * Finalizuje wszystkie nieprzeniesione pozycje dla danego live_id:
+     * - znajduje/zakłada otwartą grupę zamówienia,
+     * - dodaje order_items,
+     * - commit rezerwacji,
+     * - znaczy live_temp jako przeniesione.
+     * Zwraca liczbę przeniesionych pozycji.
+     */
+    public function finalizeBatch(int $liveId, int $operatorUserId): int
     {
         try {
-            $pdo->beginTransaction();
+            $this->pdo->beginTransaction();
 
-            $st = $pdo->prepare("SELECT reservation_id FROM live_temp WHERE id = :id AND owner_id = :owner_id");
-            $st->execute(['id' => $tempId, 'owner_id' => $ownerId]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$row) throw new RuntimeException("Nie znaleziono pozycji");
-
-            if (!empty($row['reservation_id'])) {
-                StockReservationEngine::release($pdo, (int)$row['reservation_id']);
-            }
-
-            $pdo->prepare("DELETE FROM live_temp WHERE id = :id")->execute(['id' => $tempId]);
-            $pdo->commit();
-            return true;
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            return false;
-        }
-    }
-
-    public static function updateQty(PDO $pdo, int $tempId, float $newQty, int $ownerId): bool
-    {
-        try {
-            $pdo->beginTransaction();
-
-            $row = $pdo->prepare("SELECT * FROM live_temp WHERE id = :id AND owner_id = :owner_id");
-            $row->execute(['id' => $tempId, 'owner_id' => $ownerId]);
-            $data = $row->fetch(PDO::FETCH_ASSOC);
-            if (!$data) throw new RuntimeException("Nie znaleziono pozycji");
-
-            // Aktualizacja rezerwacji (jeśli istnieje)
-            if (!empty($data['reservation_id'])) {
-                StockReservationEngine::updateQty($pdo, (int)$data['reservation_id'], $newQty);
-            }
-
-            $pdo->prepare("UPDATE live_temp SET qty = :qty WHERE id = :id")->execute([
-                'qty' => $newQty,
-                'id' => $tempId
-            ]);
-
-            $pdo->commit();
-            return true;
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            return false;
-        }
-    }
-
-    public static function quickStats(PDO $pdo, int $ownerId, int $liveId): array
-    {
-        $sql = "SELECT COUNT(DISTINCT client_id) AS clients,
-                       SUM(qty) AS total_qty,
-                       SUM(qty * price) AS total_value
+            $st = $this->pdo->prepare("
+                SELECT *
                   FROM live_temp
-                 WHERE owner_id = :owner_id AND live_id = :live_id";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute(['owner_id' => $ownerId, 'live_id' => $liveId]);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['clients' => 0, 'total_qty' => 0, 'total_value' => 0.0];
+                 WHERE owner_id = :oid
+                   AND live_id  = :lid
+                   AND transferred_at IS NULL
+            ");
+            $st->execute([':oid' => $this->ownerId, ':lid' => $liveId]);
+            $rows = $st->fetchAll();
+
+            if (!$rows) {
+                $this->pdo->rollBack();
+                return 0;
+            }
+
+            $orderEngine = new OrderEngine($this->pdo);
+            $migrated = 0;
+
+            foreach ($rows as $row) {
+                $clientId  = (int)$row['client_id'];
+                $qty       = (float)$row['qty'];
+                $unitPrice = (float)($row['price'] ?? 0.0);
+
+                $group = $orderEngine->findOrCreateOpenGroupForLive($this->ownerId, $clientId, $operatorUserId);
+                if (!$group) {
+                    throw new RuntimeException('Brak grupy zamówienia');
+                }
+
+                $orderEngine->addOrderItem([
+                    'owner_id'       => $this->ownerId,
+                    'order_id'       => (int)$group['order_id'],
+                    'order_group_id' => (int)$group['id'],
+                    'product_id'     => (int)($row['product_id'] ?? 0),
+                    'name'           => (string)$row['name'],
+                    'sku'            => (string)($row['sku'] ?? ''),
+                    'qty'            => $qty,
+                    'unit_price'     => $unitPrice,
+                    'vat_rate'       => (float)($row['vat_rate'] ?? 23.0),
+                    'source_type'    => OrderItemSourceType::LIVE->value,
+                    'source_channel' => 'live',
+                ]);
+
+                if (!empty($row['reservation_id'])) {
+                    StockReservationEngine::commit($this->pdo, (int)$row['reservation_id']);
+                }
+
+                $this->pdo->prepare("
+                    UPDATE live_temp
+                       SET transferred_at = NOW(),
+                           target_order_id = :oid,
+                           target_group_id = :gid
+                     WHERE id = :id
+                ")->execute([
+                    ':oid' => (int)$group['order_id'],
+                    ':gid' => (int)$group['id'],
+                    ':id'  => (int)$row['id']
+                ]);
+
+                $migrated++;
+            }
+
+            $this->pdo->commit();
+            LogEngine::boot($this->pdo, $this->ownerId)->info('live.finalize', 'ok', [
+                'live_id' => $liveId, 'migrated' => $migrated
+            ]);
+            return $migrated;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            LogEngine::boot($this->pdo, $this->ownerId)->error('live.finalize', 'exception', [
+                'live_id' => $liveId, 'msg' => $e->getMessage()
+            ]);
+            throw new RuntimeException('LiveEngine::finalizeBatch failed: ' . $e->getMessage(), 0, $e);
+        }
     }
 }

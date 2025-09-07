@@ -1,7 +1,6 @@
 <?php
 // admin/products/tags.php – Zarządzanie tagami produktów
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 
 $owner_id = $_SESSION['user']['owner_id'] ?? 0;
 

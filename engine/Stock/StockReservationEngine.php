@@ -1,152 +1,329 @@
 <?php
-// engine/stock/StockReservationEngine.php — Olaj.pl V4
 declare(strict_types=1);
 
 namespace Engine\Stock;
 
 use PDO;
+use PDOException;
 use Throwable;
-use RuntimeException;
-use Engine\Enum\Column;
-use Engine\Enum\StockReservationStatus;
-use Engine\Enum\EnumValidator;
-
-if (!\function_exists('logg')) {
-    function logg(string $level, string $channel, string $message, array $context = [], array $extra = []): void
-    {
-        error_log('[logg-fallback] ' . json_encode(compact('level', 'channel', 'message', 'context', 'extra'), JSON_UNESCAPED_UNICODE));
-    }
-}
 
 final class StockReservationEngine
 {
-    public function __construct(private PDO $pdo) {}
+    private PDO $pdo;
+    private int $ownerId;
 
-    public function reserve(int $ownerId, int $productId, int $clientId, int $liveId, float $qty, int $sourceRowId): int
+    public function __construct(PDO $pdo, int $ownerId)
     {
-        EnumValidator::assert(StockReservationStatus::class, 'reserved');
+        $this->pdo     = $pdo;
+        $this->ownerId = $ownerId;
 
-        $qty = $this->toDecimal($qty);
-        $this->pdo->beginTransaction();
+        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
+        $this->pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+    }
 
+    public static function boot(PDO $pdo, int $ownerId): self
+    {
+        return new self($pdo, $ownerId);
+    }
+
+    /* =========================
+     * API instancyjne
+     * ========================= */
+
+    public function reserve(
+        int $productId,
+        float $qty,
+        string $sourceType,   // 'live' | 'manual'
+        int $sourceRowId,     // <-- dopasowane do kolumny source_row_id
+        ?int $clientId = null,
+        ?int $liveId = null
+    ): int {
+        return self::create(
+            $this->pdo,
+            $this->ownerId,
+            $productId,
+            (int)($clientId ?? 0),
+            (float)$qty,
+            $sourceType,
+            $sourceRowId,
+            $liveId
+        );
+    }
+
+    public function commitReservationBySource(string $sourceType, int $sourceRowId): bool
+    {
+        return self::commitBySource($this->pdo, $this->ownerId, $sourceType, $sourceRowId);
+    }
+
+    public function releaseBySource(string $sourceType, int $sourceRowId): bool
+    {
+        return self::releaseBySourceStatic($this->pdo, $this->ownerId, $sourceType, $sourceRowId);
+    }
+
+    /* =========================
+     * API statyczne (kompat)
+     * ========================= */
+
+    /**
+     * Tworzy rezerwację (status='reserved') i przelicza cache w `products`.
+     * Zwraca ID rezerwacji.
+     * ZGODNE ZE SCHEMATEM:
+     *   stock_reservations(source_type, source_row_id, live_id, ...)
+     */
+    public static function create(
+        PDO $pdo,
+        int $ownerId,
+        int $productId,
+        int $clientId,
+        float $qty,
+        string $sourceType,
+        int $sourceRowId,
+        ?int $liveId = null
+    ): int {
+        if ($qty <= 0) throw new \InvalidArgumentException('qty_must_be_positive');
+
+        $weStartedTx = false;
         try {
-            // Zwiększ stock_reserved
-            $this->pdo->prepare("UPDATE products SET stock_reserved = stock_reserved + :qty WHERE id = :pid AND owner_id = :oid")
-                ->execute(['qty' => $qty, 'pid' => $productId, 'oid' => $ownerId]);
+            if (!$pdo->inTransaction()) { $pdo->beginTransaction(); $weStartedTx = true; }
 
-            // INSERT rezerwacji
-            $stmt = $this->pdo->prepare(
-                "INSERT INTO stock_reservations (owner_id, product_id, client_id, live_id, qty, status, source, source_row_id, reserved_at)
-                 VALUES (:oid, :pid, :cid, :lid, :qty, 'reserved', 'live', :src, NOW())"
-            );
+            $stmt = $pdo->prepare("
+                INSERT INTO stock_reservations
+                    (product_id, owner_id, client_id, live_id, qty, status, source_type, source_row_id, note, flags, metadata, created_at, reserved_at)
+                VALUES
+                    (:pid, :oid, :cid, :live_id, :qty, 'reserved', :stype, :srow, '', '', NULL, NOW(), NOW())
+            ");
             $stmt->execute([
-                'oid' => $ownerId,
-                'pid' => $productId,
-                'cid' => $clientId,
-                'lid' => $liveId,
-                'qty' => $qty,
-                'src' => $sourceRowId,
+                ':pid'     => $productId,
+                ':oid'     => $ownerId,
+                ':cid'     => $clientId ?: null,
+                ':live_id' => $liveId ?: null,
+                ':qty'     => $qty,
+                ':stype'   => $sourceType,
+                ':srow'    => $sourceRowId,
             ]);
 
-            $resId = (int)$this->pdo->lastInsertId();
+            $id = (int)$pdo->lastInsertId();
 
-            $this->pdo->commit();
+            self::recalculateReservedCache($pdo, $ownerId, $productId);
 
-            logg('info', 'stock.reservation', 'reserved', compact(
-                'ownerId',
-                'productId',
-                'clientId',
-                'qty',
-                'liveId',
-                'sourceRowId',
-                'resId'
-            ));
+            if ($weStartedTx) $pdo->commit();
 
-            return $resId;
+            if (\function_exists('logg')) {
+                logg('info', 'stock.reserve', 'reserved', [
+                    'reservation_id' => $id,
+                    'owner_id'       => $ownerId,
+                    'product_id'     => $productId,
+                    'qty'            => $qty,
+                    'source_type'    => $sourceType,
+                    'source_row_id'  => $sourceRowId,
+                    'live_id'        => $liveId,
+                ], ['context' => 'stock']);
+            }
+
+            return $id;
         } catch (Throwable $e) {
-            $this->pdo->rollBack();
-            logg('error', 'stock.reservation', 'reserve.error', ['ex' => $e->getMessage()]);
+            if ($weStartedTx && $pdo->inTransaction()) $pdo->rollBack();
+            if (\function_exists('logg')) logg('error', 'stock.reserve', 'exception', ['ex' => $e->getMessage()]);
             throw $e;
         }
     }
 
-    public function release(int $ownerId, int $reservationId): void
+    /**
+     * Commit rezerwacji po jej ID (reserved -> committed).
+     */
+    public static function commit(PDO $pdo, int $reservationId): bool
     {
-        EnumValidator::assert(StockReservationStatus::class, 'released');
-
-        $this->pdo->beginTransaction();
+        $weStartedTx = false;
         try {
-            $st = $this->pdo->prepare(
-                "SELECT product_id, qty
-                   FROM stock_reservations
-                  WHERE id = :id AND owner_id = :oid AND status = 'reserved'
-                  FOR UPDATE"
-            );
-            $st->execute(['id' => $reservationId, 'oid' => $ownerId]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$row) throw new RuntimeException('Reservation not found or already processed');
+            if (!$pdo->inTransaction()) { $pdo->beginTransaction(); $weStartedTx = true; }
 
-            $productId = (int)$row['product_id'];
-            $qty       = $this->toDecimal((float)$row['qty']);
+            $row = self::getReservation($pdo, $reservationId);
+            if (!$row || ($row['status'] ?? '') !== 'reserved') {
+                if ($weStartedTx && $pdo->inTransaction()) $pdo->rollBack();
+                return false;
+            }
 
-            $this->pdo->prepare("UPDATE products SET stock_reserved = stock_reserved - :qty WHERE id = :pid AND owner_id = :oid")
-                ->execute(['qty' => $qty, 'pid' => $productId, 'oid' => $ownerId]);
+            $pdo->prepare("
+                UPDATE stock_reservations
+                   SET status='committed', committed_at = NOW()
+                 WHERE id = :id AND status='reserved'
+            ")->execute([':id' => $reservationId]);
 
-            $this->pdo->prepare("UPDATE stock_reservations SET status = 'released', released_at = NOW() WHERE id = :id")
-                ->execute(['id' => $reservationId]);
+            self::recalculateReservedCache($pdo, (int)$row['owner_id'], (int)$row['product_id']);
 
-            $this->pdo->commit();
+            if ($weStartedTx) $pdo->commit();
 
-            logg('info', 'stock.reservation', 'released', compact('ownerId', 'reservationId', 'productId', 'qty'));
+            if (\function_exists('logg')) {
+                logg('info', 'stock.commit', 'reservation_committed', [
+                    'reservation_id' => $reservationId,
+                    'product_id'     => (int)$row['product_id'],
+                    'owner_id'       => (int)$row['owner_id'],
+                ]);
+            }
+
+            return true;
         } catch (Throwable $e) {
-            $this->pdo->rollBack();
-            logg('error', 'stock.reservation', 'release.error', ['ex' => $e->getMessage()]);
+            if ($weStartedTx && $pdo->inTransaction()) $pdo->rollBack();
+            if (\function_exists('logg')) logg('error', 'stock.commit', 'exception', ['ex' => $e->getMessage()]);
             throw $e;
         }
     }
 
-    public function commit(int $ownerId, int $reservationId): void
+    /**
+     * Commit wszystkich rezerwacji powiązanych z (source_type, source_row_id).
+     */
+    public static function commitBySource(PDO $pdo, int $ownerId, string $sourceType, int $sourceRowId): bool
     {
-        EnumValidator::assert(StockReservationStatus::class, 'committed');
-
-        $this->pdo->beginTransaction();
+        $weStartedTx = false;
         try {
-            $st = $this->pdo->prepare(
-                "SELECT product_id, qty
-                   FROM stock_reservations
-                  WHERE id = :id AND owner_id = :oid AND status = 'reserved'
-                  FOR UPDATE"
-            );
-            $st->execute(['id' => $reservationId, 'oid' => $ownerId]);
-            $row = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$row) throw new RuntimeException('Reservation not found or already processed');
+            if (!$pdo->inTransaction()) { $pdo->beginTransaction(); $weStartedTx = true; }
 
-            $productId = (int)$row['product_id'];
-            $qty       = $this->toDecimal((float)$row['qty']);
+            $st = $pdo->prepare("
+                SELECT id, product_id
+                  FROM stock_reservations
+                 WHERE owner_id = :oid
+                   AND source_type = :stype
+                   AND source_row_id = :srow
+                   AND status = 'reserved'
+                 FOR UPDATE
+            ");
+            $st->execute([':oid' => $ownerId, ':stype' => $sourceType, ':srow' => $sourceRowId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
-            // Zmniejsz stock i stock_reserved
-            $this->pdo->prepare("UPDATE products
-                                    SET stock = stock - :qty, stock_reserved = stock_reserved - :qty
-                                  WHERE id = :pid AND owner_id = :oid")
-                ->execute(['qty' => $qty, 'pid' => $productId, 'oid' => $ownerId]);
+            if (!$rows) { if ($weStartedTx) $pdo->commit(); return true; }
 
-            $this->pdo->prepare("UPDATE stock_reservations
-                                    SET status = 'committed', committed_at = NOW()
-                                  WHERE id = :id")
-                ->execute(['id' => $reservationId]);
+            $up = $pdo->prepare("
+                UPDATE stock_reservations
+                   SET status='committed', committed_at = NOW()
+                 WHERE id = :id
+            ");
+            $touched = [];
+            foreach ($rows as $r) {
+                $up->execute([':id' => (int)$r['id']]);
+                $touched[(int)$r['product_id']] = true;
+            }
 
-            $this->pdo->commit();
+            foreach (array_keys($touched) as $pid) {
+                self::recalculateReservedCache($pdo, $ownerId, (int)$pid);
+            }
 
-            logg('info', 'stock.reservation', 'committed', compact('ownerId', 'reservationId', 'productId', 'qty'));
+            if ($weStartedTx) $pdo->commit();
+
+            if (\function_exists('logg')) {
+                logg('info', 'stock.commit', 'by_source', [
+                    'owner_id'      => $ownerId,
+                    'source_type'   => $sourceType,
+                    'source_row_id' => $sourceRowId,
+                    'count'         => count($rows)
+                ]);
+            }
+
+            return true;
         } catch (Throwable $e) {
-            $this->pdo->rollBack();
-            logg('error', 'stock.reservation', 'commit.error', ['ex' => $e->getMessage()]);
+            if ($weStartedTx && $pdo->inTransaction()) $pdo->rollBack();
+            if (\function_exists('logg')) logg('error', 'stock.commit', 'exception', ['ex' => $e->getMessage()]);
             throw $e;
         }
     }
 
-    private function toDecimal(float $v): float
+    /**
+     * Release (anuluj) wszystkie rezerwacje po (source_type, source_row_id).
+     */
+    public static function releaseBySourceStatic(PDO $pdo, int $ownerId, string $sourceType, int $sourceRowId): bool
     {
-        return (float)number_format($v, 3, '.', '');
+        $weStartedTx = false;
+        try {
+            if (!$pdo->inTransaction()) { $pdo->beginTransaction(); $weStartedTx = true; }
+
+            $st = $pdo->prepare("
+                SELECT id, product_id
+                  FROM stock_reservations
+                 WHERE owner_id = :oid
+                   AND source_type = :stype
+                   AND source_row_id = :srow
+                   AND status = 'reserved'
+                 FOR UPDATE
+            ");
+            $st->execute([':oid' => $ownerId, ':stype' => $sourceType, ':srow' => $sourceRowId]);
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!$rows) { if ($weStartedTx) $pdo->commit(); return true; }
+
+            $up = $pdo->prepare("
+                UPDATE stock_reservations
+                   SET status='released', released_at = NOW()
+                 WHERE id = :id
+            ");
+            $touched = [];
+            foreach ($rows as $r) {
+                $up->execute([':id' => (int)$r['id']]);
+                $touched[(int)$r['product_id']] = true;
+            }
+
+            foreach (array_keys($touched) as $pid) {
+                self::recalculateReservedCache($pdo, $ownerId, (int)$pid);
+            }
+
+            if ($weStartedTx) $pdo->commit();
+
+            if (\function_exists('logg')) {
+                logg('info', 'stock.release', 'by_source', [
+                    'owner_id'      => $ownerId,
+                    'source_type'   => $sourceType,
+                    'source_row_id' => $sourceRowId,
+                    'count'         => count($rows)
+                ]);
+            }
+
+            return true;
+        } catch (Throwable $e) {
+            if ($weStartedTx && $pdo->inTransaction()) $pdo->rollBack();
+            if (\function_exists('logg')) logg('error', 'stock.release', 'exception', ['ex' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /* ======================
+     * Helpers
+     * ====================== */
+
+    private static function getReservation(PDO $pdo, int $reservationId): ?array
+    {
+        $st = $pdo->prepare("SELECT * FROM stock_reservations WHERE id = :id LIMIT 1");
+        $st->execute([':id' => $reservationId]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        return $r ?: null;
+    }
+
+    private static function recalculateReservedCache(PDO $pdo, int $ownerId, int $productId): void
+    {
+        $sumSt = $pdo->prepare("
+            SELECT COALESCE(SUM(qty),0) AS s
+              FROM stock_reservations
+             WHERE owner_id = :oid
+               AND product_id = :pid
+               AND status = 'reserved'
+        ");
+        $sumSt->execute([':oid' => $ownerId, ':pid' => $productId]);
+        $sum = (float)$sumSt->fetchColumn();
+
+        try {
+            $upd = $pdo->prepare("
+                UPDATE products
+                   SET stock_reserved_cached = :s,
+                       updated_at = NOW()
+                 WHERE id = :pid AND owner_id = :oid
+            ");
+            $upd->execute([':s' => $sum, ':pid' => $productId, ':oid' => $ownerId]);
+        } catch (PDOException $e) {
+            if (\function_exists('logg')) {
+                logg('warning', 'stock.cache', 'reserved_cache_update_skipped', [
+                    'owner_id'   => $ownerId,
+                    'product_id' => $productId,
+                    'reason'     => $e->getMessage()
+                ]);
+            }
+        }
     }
 }

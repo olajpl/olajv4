@@ -1,14 +1,13 @@
 <?php
 declare(strict_types=1);
 // admin/live/ajax/ajax_add_live_product.php
-define('APP_ROOT', realpath(__DIR__ . '/../../..')); // 3 katalogi w górę od /admin/live/ajax/
-require_once APP_ROOT . '/includes/auth.php';
-require_once APP_ROOT . '/includes/db.php';
+define('APP_ROOT', realpath(__DIR__ . '/../../../../')); // 3 katalogi w górę od /admin/live/ajax/
 
+require_once __DIR__ . '/../../../../bootstrap.php';
 require_once __DIR__ . '/__live_boot.php';
 
 require_once APP_ROOT . '/engine/Orders/ClientEngine.php';
-require_once APP_ROOT . '/engine/Orders/ProductEngine.php';
+require_once APP_ROOT . '/engine/Product/ProductEngine.php';
 require_once APP_ROOT . '/engine/Orders/PaymentEngine.php';
 require_once APP_ROOT . '/engine/Live/LiveEngine.php';
 if (!function_exists('json_out')) {
@@ -22,8 +21,9 @@ if (!function_exists('json_out')) {
         exit; // ważne: niech endpoint kończy się natychmiast po wysyłce JSON
     }
 }
+
 use Engine\Orders\ClientEngine;
-use Engine\Orders\ProductEngine;
+use Engine\Product\ProductEngine;
 use Engine\Orders\PaymentEngine;
 use Engine\Live\LiveEngine;
 
@@ -65,19 +65,23 @@ try {
     $payload += ['is_custom'=>0, 'source_type'=>'catalog', 'product_id'=>$product_id];
   }
 
-  $clients  = new ClientEngine($pdo);
-  $products = new ProductEngine($pdo);
-  $payments = new PaymentEngine($pdo);
-  $live     = new LiveEngine($pdo, $clients, $products, $payments);
+$clients  = new ClientEngine($pdo, $owner_id);
+$products = new ProductEngine($pdo, $owner_id);
+$payments = new PaymentEngine($pdo, $owner_id);
+$live     = new LiveEngine($pdo, $owner_id);
 
   $added = [];
-  foreach ($client_ids as $i=>$cid) {
-    $cid = (int)$cid; if ($cid<=0) continue;
-    $qty = (int)($qtys[$i] ?? 1); if ($qty<=0) $qty = 1;
+foreach ($client_ids as $i=>$cid) {
+  $cid = (int)$cid; if ($cid<=0) continue;
+  $qty = (int)($qtys[$i] ?? 1); if ($qty<=0) $qty = 1;
 
-    $res = $live->addItem($payload + ['client_id'=>$cid, 'qty'=>$qty]);
-    $added[] = $res;
-  }
+  $productId = $payload['is_custom'] ? null : ($payload['product_id'] ?? null);
+  $name = $payload['name'] ?? 'Produkt';
+
+  $live->addProduct($live_id, $cid, $productId, $name, (float)$qty);
+  $added[] = ['client_id' => $cid, 'qty' => $qty];
+}
+
 
   if (!$added) throw new RuntimeException('Nic nie dodano.');
   json_out(['success'=>true, 'added'=>$added]);

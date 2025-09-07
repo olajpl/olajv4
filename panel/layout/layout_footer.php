@@ -6,7 +6,7 @@ $memPeak  = memory_get_peak_usage(true) / 1024 / 1024;
 ?>
 </main>
 </div> <!-- .flex -->
-
+<?php include __DIR__ . '/../admin/ai/widget.php'; ?>
 <!-- Overlay dla mobile -->
 <div id="sidebarOverlay" aria-hidden="true"></div>
 

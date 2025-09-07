@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 // 1) APP_ROOT — zdefiniuj tylko raz
 if (!defined('APP_ROOT')) {
-    define('APP_ROOT', realpath(__DIR__ . '/../../..'));
+    define('APP_ROOT', realpath(__DIR__ . '/../../../../'));
 }
 
 // 2) Sesja — bez ostrzeżeń o już uruchomionej
@@ -49,7 +49,7 @@ if (!function_exists('json_err')) {
 }
 
 // 4) DB bootstrap
-require_once APP_ROOT . '/includes/db.php';
+require_once __DIR__ . '/../../../../includes/db.php';
 if (!isset($pdo) || !$pdo) {
     json_err('Brak połączenia z DB ($pdo).', 500);
 }

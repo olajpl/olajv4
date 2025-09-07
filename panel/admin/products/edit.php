@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../../bootstrap.php';
-require_once __DIR__ . '/../../../engine/Product/ProductEngine.php';
+
 
 use Engine\Product\ProductEngine;
 use Engine\Log\LogEngine;
@@ -799,13 +799,16 @@ $catId = (int)($product['category_id'] ?? 0);
 
         btn.addEventListener('click', async function() {
             var payload = {
-                name: getVal('input[name="name"]'),
-                code: getVal('input[name="code"]'),
-                twelve_nc: getVal('input[name="twelve_nc"]'), // jeżeli nie masz pola, zostanie '' – OK
-                price: getVal('input[name="unit_price"]'),
-                vat_rate: getVal('input[name="vat_rate"]') || 23,
-                tags: getSelectedTagLabels()
-            };
+  product_id: <?= (int)$product_id ?>,              // ⬅️ DODANE
+  csrf_token: '<?= h($csrf) ?>',                    // ⬅️ (opcjonalnie)
+  name: getVal('input[name="name"]'),
+  code: getVal('input[name="code"]'),
+  twelve_nc: getVal('input[name="twelve_nc"]'),
+  price: getVal('input[name="unit_price"]'),
+  vat_rate: getVal('input[name="vat_rate"]') || 23,
+  tags: getSelectedTagLabels()
+};
+
 
             if (!payload.name) {
                 alert('Podaj najpierw nazwę produktu.');

@@ -3,13 +3,13 @@
 declare(strict_types=1);
 require_once __DIR__ . '/__live_boot.php';
 
-require_once APP_ROOT . '/engine/orders/ClientEngine.php';
-require_once APP_ROOT . '/engine/orders/ProductEngine.php';
-require_once APP_ROOT . '/engine/orders/PaymentEngine.php';
-require_once APP_ROOT . '/engine/live/LiveEngine.php';
+require_once APP_ROOT . '/engine/Orders/ClientEngine.php';
+require_once APP_ROOT . '/engine/Product/ProductEngine.php';
+require_once APP_ROOT . '/engine/Orders/PaymentEngine.php';
+require_once APP_ROOT . '/engine/Live/LiveEngine.php';
 
 use Engine\Orders\ClientEngine;
-use Engine\Orders\ProductEngine;
+use Engine\Product\ProductEngine;
 use Engine\Orders\PaymentEngine;
 use Engine\Live\LiveEngine;
 

@@ -1,7 +1,6 @@
 <?php
 // admin/live/view.php — Olaj.pl V4
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../layout/top_panel.php';
 require_once __DIR__ . '/../../layout/layout_header.php';
 
@@ -388,6 +387,15 @@ if (!$stream) {
       });
     });
   })();
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', ()=>{
+    if (window.jQuery) {
+      $('#product_search')
+        .on('select2:select', ()=>console.log('[LIVE] select2:select fired'))
+        .on('change', ()=>console.log('[LIVE] change fired'));
+    }
+  });
 </script>
 
 <?php require_once __DIR__ . '/../../layout/layout_footer.php'; ?>

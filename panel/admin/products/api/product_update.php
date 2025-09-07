@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 header('Content-Type: text/html; charset=utf-8');
 
-require_once __DIR__ . '/../../../bootstrap.php';
+require_once __DIR__ . '/../../../../bootstrap.php';
 require_once __DIR__ . '/../../../../engine/Product/ProductEngine.php';
 
 use Engine\Product\ProductEngine;
@@ -41,12 +41,7 @@ function tableExists(PDO $pdo, string $name): bool
     $st->execute([':t' => $name]);
     return (bool)$st->fetchColumn();
 }
-function columnExists(PDO $pdo, string $t, string $c): bool
-{
-    $st = $pdo->prepare("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c LIMIT 1");
-    $st->execute([':t' => $t, ':c' => $c]);
-    return (bool)$st->fetchColumn();
-}
+
 
 $product_id     = (int)($_POST['id'] ?? 0);
 $name           = trim((string)($_POST['name'] ?? ''));

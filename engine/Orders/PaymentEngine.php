@@ -69,6 +69,19 @@ final class PaymentEngine
         if (abs($paid - $due) <= 0.00001) return PaidStatus::OPLACONA;
         return PaidStatus::NADPLATA;
     }
+/** Fire-and-forget: przelicz shipping cache na zamówieniu, bez rzucania wyjątków. */
+private function recalcOrderShippingSafe(int $ownerId, int $orderId): void
+{
+    try {
+        // Jesteśmy w tym samym namespace, więc bez use/fully qualified:
+        $oe = new OrderEngine($this->pdo);
+        $oe->recalcOrderShipping($ownerId, $orderId);
+    } catch (Throwable $e) {
+        $this->log('warning','payments.engine','order.ship.recalc.fail',[
+            'owner_id'=>$ownerId,'order_id'=>$orderId,'err'=>$e->getMessage()
+        ]);
+    }
+}
 
     /* ─────────────────── Kalkulacje sum / due / paid ─────────────────── */
 
@@ -252,54 +265,63 @@ final class PaymentEngine
         ?float $expectedTotal = null
     ): void {
         $this->pdo->beginTransaction();
-        try {
-            // lock konkretnej płatności by uniknąć wyścigów
-            $lock = $this->pdo->prepare("SELECT id FROM payments WHERE id = :pid AND owner_id = :oid FOR UPDATE");
-            $lock->execute(['pid' => $paymentId, 'oid' => $ownerId]);
+    try {
+        // lock płatności
+        $lock = $this->pdo->prepare("SELECT id FROM payments WHERE id = :pid AND owner_id = :oid FOR UPDATE");
+        $lock->execute(['pid' => $paymentId, 'oid' => $ownerId]);
 
-            $sql = "UPDATE payments
-                       SET status=:st,
-                           paid_at = NOW(),
-                           provider_payment_id = COALESCE(:ppid, provider_payment_id),
-                           metadata = COALESCE(:meta, metadata),
-                           status_changed_at = NOW(),
-                           updated_at = NOW()
-                     WHERE id = :pid AND owner_id = :oid";
-            $st = $this->pdo->prepare($sql);
-            $st->execute([
-                'pid'  => $paymentId,
-                'oid'  => $ownerId,
-                'ppid' => $providerPaymentId,
-                'meta' => $this->j($meta),
-                'st'   => PaymentStatus::PAID->value,
+        // update -> paid
+        $sql = "UPDATE payments
+                   SET status=:st,
+                       paid_at = NOW(),
+                       provider_payment_id = COALESCE(:ppid, provider_payment_id),
+                       metadata = COALESCE(:meta, metadata),
+                       status_changed_at = NOW(),
+                       updated_at = NOW()
+                 WHERE id = :pid AND owner_id = :oid";
+        $st = $this->pdo->prepare($sql);
+        $st->execute([
+            'pid'  => $paymentId,
+            'oid'  => $ownerId,
+            'ppid' => $providerPaymentId,
+            'meta' => $this->j($meta),
+            'st'   => PaymentStatus::PAID->value,
+        ]);
+
+        // POBIERZ group_id i order_id (zmiana względem Twojej wersji)
+        $g = $this->pdo->prepare("SELECT order_id, order_group_id FROM payments WHERE id = :pid AND owner_id = :oid");
+        $g->execute(['pid' => $paymentId, 'oid' => $ownerId]);
+        $pr = $g->fetch(PDO::FETCH_ASSOC);
+        $orderId = (int)($pr['order_id'] ?? 0);
+        $groupId = (int)($pr['order_group_id'] ?? 0);
+
+        // przelicz agregat paid_status w grupie (jak było)
+        if ($groupId > 0) {
+            $status = $this->recalcPaidStatus($ownerId, $groupId, $expectedTotal);
+            $this->log('info','payments.engine','paid.recalc_done',[
+                'owner_id'=>$ownerId,'payment_id'=>$paymentId,
+                'order_group_id'=>$groupId,'paid_status'=>$status
             ]);
-
-            // pobierz group_id do przeliczenia agregatu
-            $g = $this->pdo->prepare("SELECT order_group_id FROM payments WHERE id = :pid AND owner_id = :oid");
-            $g->execute(['pid' => $paymentId, 'oid' => $ownerId]);
-            $groupId = (int)($g->fetchColumn() ?: 0);
-
-            if ($groupId > 0) {
-                $status = $this->recalcPaidStatus($ownerId, $groupId, $expectedTotal);
-                $this->log('info', 'payments.engine', 'paid.recalc_done', [
-                    'owner_id' => $ownerId, 'payment_id' => $paymentId,
-                    'order_group_id' => $groupId, 'paid_status' => $status
-                ]);
-            } else {
-                $this->log('warning', 'payments.engine', 'paid.no_group', [
-                    'owner_id' => $ownerId, 'payment_id' => $paymentId
-                ]);
-            }
-
-            $this->pdo->commit();
-        } catch (Throwable $e) {
-            $this->pdo->rollBack();
-            $this->log('error', 'payments.engine', 'paid.error', [
-                'owner_id' => $ownerId, 'payment_id' => $paymentId, 'error' => $e->getMessage()
+        } else {
+            $this->log('warning','payments.engine','paid.no_group',[
+                'owner_id'=>$ownerId,'payment_id'=>$paymentId
             ]);
-            throw $e;
         }
+
+        $this->pdo->commit();
+
+        // 🆕 PO COMMIT — przelicz shipping cache NA ZAMÓWIENIU
+        if ($orderId > 0) {
+            $this->recalcOrderShippingSafe($ownerId, $orderId);
+        }
+    } catch (Throwable $e) {
+        $this->pdo->rollBack();
+        $this->log('error','payments.engine','paid.error',[
+            'owner_id'=>$ownerId,'payment_id'=>$paymentId,'error'=>$e->getMessage()
+        ]);
+        throw $e;
     }
+}
 
     public function markFailed(int $paymentId, int $ownerId, ?string $reason = null, ?array $meta = null): void
     {

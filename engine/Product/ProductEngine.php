@@ -638,61 +638,63 @@ final class ProductEngine
 
 
     public function setMainImage(int $productId, string $imagePath): void
-    {
-        if ($productId <= 0 || $imagePath === '') {
-            throw new InvalidArgumentException("Invalid product or image path");
-        }
-
-        $this->requireOwner();
-
-        $pdo = $this->pdo;
-
-        $pdo->beginTransaction();
-        try {
-            // Wyzeruj is_main
-            $stmt = $pdo->prepare("
-            UPDATE product_images
-            SET is_main = 0
-            WHERE owner_id = :owner_id AND product_id = :product_id
-        ");
-            $stmt->execute([
-                'owner_id' => $this->owner_id,
-                'product_id' => $productId
-            ]);
-
-            // Ustaw is_main = 1 tam gdzie ścieżka się zgadza
-            $stmt = $pdo->prepare("
-            UPDATE product_images
-            SET is_main = 1
-            WHERE owner_id = :owner_id AND product_id = :product_id AND image_path = :path
-        ");
-            $stmt->execute([
-                'owner_id' => $this->owner_id,
-                'product_id' => $productId,
-                'path' => $imagePath
-            ]);
-
-            // Jeśli nie zaktualizowano nic — znaczy że trzeba wstawić nowy rekord
-            if ($stmt->rowCount() === 0) {
-                $stmt = $pdo->prepare("
-                INSERT INTO product_images (owner_id, product_id, image_path, is_main)
-                VALUES (:owner_id, :product_id, :path, 1)
-            ");
-                $stmt->execute([
-                    'owner_id' => $this->owner_id,
-                    'product_id' => $productId,
-                    'path' => $imagePath
-                ]);
-            }
-
-            $pdo->commit();
-
-            wlog("setMainImage() → zapisano {$imagePath} jako główne dla produktu {$productId}");
-        } catch (Throwable $e) {
-            $pdo->rollBack();
-            throw new RuntimeException("Failed to set main image: " . $e->getMessage(), 0, $e);
-        }
+{
+    if ($productId <= 0 || $imagePath === '') {
+        throw new \InvalidArgumentException("Invalid product or image path");
     }
+
+    $pdo = $this->pdo;
+    $ownerId = $this->ownerId;
+
+    $pdo->beginTransaction();
+    try {
+        // wyzeruj is_main dla danego ownera/produktu
+        $stmt = $pdo->prepare("
+            UPDATE product_images
+               SET is_main = 0
+             WHERE owner_id = :owner_id AND product_id = :product_id
+        ");
+        $stmt->execute([
+            ':owner_id'  => $ownerId,
+            ':product_id'=> $productId
+        ]);
+
+        // spróbuj ustawić istniejący rekord po image_path
+        $stmt = $pdo->prepare("
+            UPDATE product_images
+               SET is_main = 1
+             WHERE owner_id = :owner_id AND product_id = :product_id AND image_path = :path
+        ");
+        $stmt->execute([
+            ':owner_id'  => $ownerId,
+            ':product_id'=> $productId,
+            ':path'      => $imagePath
+        ]);
+
+        if ($stmt->rowCount() === 0) {
+            // brak – wstaw nowy
+            $stmt = $pdo->prepare("
+                INSERT INTO product_images (owner_id, product_id, image_path, is_main, uploaded_at)
+                VALUES (:owner_id, :product_id, :path, 1, NOW())
+            ");
+            $stmt->execute([
+                ':owner_id'  => $ownerId,
+                ':product_id'=> $productId,
+                ':path'      => $imagePath
+            ]);
+        }
+
+        $pdo->commit();
+        LogEngine::boot($this->pdo, $this->ownerId)->info('product.image', 'main_set', [
+            'product_id' => $productId,
+            'path'       => $imagePath
+        ]);
+    } catch (\Throwable $e) {
+        $pdo->rollBack();
+        throw new \RuntimeException("Failed to set main image: " . $e->getMessage(), 0, $e);
+    }
+}
+
 
 
     public function setGalleryImages(int $productId, array $pathsOrUrls): void
@@ -1083,4 +1085,40 @@ final class ProductEngine
         $res = $this->listProducts($params);
         return (int)($res['total'] ?? 0);
     }
+	public function getAvailableQty(int $productId): float
+{
+    $sql = "SELECT stock_available
+            FROM products
+            WHERE id = :product_id AND owner_id = :owner_id AND deleted_at IS NULL";
+    $stmt = $this->pdo->prepare($sql);
+    $stmt->execute([
+        ':product_id' => $productId,
+        ':owner_id'   => $this->ownerId,
+    ]);
+    return (float)$stmt->fetchColumn();
 }
+public function getProductAvailability(int $productId): array
+{
+    $sql = "SELECT stock_cached, stock_reserved_cached, stock_available
+            FROM products
+            WHERE id = :product_id AND owner_id = :owner_id AND deleted_at IS NULL";
+    $stmt = $this->pdo->prepare($sql);
+    $stmt->execute([
+        ':product_id' => $productId,
+        ':owner_id'   => $this->ownerId,
+    ]);
+    $row = $stmt->fetch();
+    if (!$row) return ['available' => false, 'qty' => 0];
+
+    return [
+        'available' => ((float)$row['stock_available'] > 0),
+        'qty'       => (float)$row['stock_available'],
+        'cached'    => (float)$row['stock_cached'],
+        'reserved'  => (float)$row['stock_reserved_cached'],
+    ];
+}
+
+	
+}
+
+

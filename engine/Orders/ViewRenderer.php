@@ -22,11 +22,10 @@ if (!function_exists('__os_val')) {
             if (class_exists(\Engine\Enum\OrderStatus::class)) {
                 /** @var \BackedEnum|\UnitEnum|string $obj */
                 $obj = constant(\Engine\Enum\OrderStatus::class . '::' . $case);
-                // dla BackedEnum mamy ->value; dla UnitEnum rzutujemy do stringa nazwę case'a
                 return \is_object($obj) && property_exists($obj, 'value') ? (string)$obj->value : (string)$obj;
             }
         } catch (\Throwable $__) {
-            // cicho i miękko wróć do fallbacku
+            // miękki fallback
         }
         return $fallback;
     }
@@ -55,13 +54,12 @@ class ViewRenderer
         return null;
     }
 
-    /** Bezpieczny string: przyjmuje string|array|scalar|null i zwraca string. */
+    /** Bezpieczny string. */
     private static function s(mixed $val, string $default = ''): string
     {
         if (is_string($val)) return $val;
         if (is_numeric($val)) return (string)$val;
         if (is_array($val)) {
-            // najczęstsze klucze: paid_status/status/value/0
             $picked = self::first([
                 $val['paid_status'] ?? null,
                 $val['status'] ?? null,
@@ -76,9 +74,7 @@ class ViewRenderer
     /** Bezpieczny float. */
     private static function f(mixed $val, float $default = 0.0): float
     {
-        if (is_float($val) || is_int($val) || (is_string($val) && is_numeric($val))) {
-            return (float)$val;
-        }
+        if (is_float($val) || is_int($val) || (is_string($val) && is_numeric($val))) return (float)$val;
         if (is_array($val)) {
             $picked = self::first([
                 $val['amount'] ?? null,
@@ -102,6 +98,52 @@ class ViewRenderer
         return htmlspecialchars((string)self::s($s), ENT_QUOTES, 'UTF-8');
     }
 
+    /** Normalizacja rekordu z shipping_addresses → wspólny shape. */
+    private static function normalizeShippingAddr(array $sa): array
+    {
+        // shipping_addresses: name, email, phone, country, city, postal_code, street, building_no, apartment_no
+        $street = trim(implode(' ', array_filter([
+            (string)($sa['street'] ?? ''),
+            (string)($sa['building_no'] ?? ''),
+            (string)($sa['apartment_no'] ?? ''),
+        ])));
+
+        return [
+            'id'          => $sa['id'] ?? null,
+            'full_name'   => (string)($sa['name'] ?? ''),
+            'company'     => (string)($sa['company'] ?? ''), // może nie być w schemacie — luz
+            'email'       => (string)($sa['email'] ?? ''),
+            'phone'       => (string)($sa['phone'] ?? ''),
+            'country'     => (string)($sa['country'] ?? ''),
+            'city'        => (string)($sa['city'] ?? ''),
+            'postal_code' => (string)($sa['postal_code'] ?? ''),
+            'street'      => $street,
+            'locker_id'   => (string)($sa['locker_id'] ?? ''),
+            'type'        => (string)($sa['type'] ?? ''),
+            'label'       => (string)($sa['label'] ?? ''),
+        ];
+    }
+
+    /** Normalizacja rekordu z client_addresses → wspólny shape. */
+    private static function normalizeClientAddr(array $ca): array
+    {
+        // client_addresses już ma full_name/street/postal_code/city/country/phone/email
+        return [
+            'id'          => $ca['id'] ?? null,
+            'full_name'   => (string)($ca['full_name'] ?? ''),
+            'company'     => (string)($ca['company'] ?? ''),
+            'email'       => (string)($ca['email'] ?? ''),
+            'phone'       => (string)($ca['phone'] ?? ''),
+            'country'     => (string)($ca['country'] ?? ''),
+            'city'        => (string)($ca['city'] ?? ''),
+            'postal_code' => (string)($ca['postal_code'] ?? ''),
+            'street'      => (string)($ca['street'] ?? ''),
+            'locker_id'   => (string)($ca['locker_code'] ?? ''),
+            'type'        => 'shipping',
+            'label'       => (string)($ca['label'] ?? ''),
+        ];
+    }
+
     /* ===========================
      * Główne metody
      * =========================== */
@@ -112,15 +154,16 @@ class ViewRenderer
         logg('debug', 'orders', '🔍 loadOrderData() start', ['order_id' => $orderId, 'owner_id' => $ownerId]);
 
         try {
-            // -- ORDER + CLIENT
+            // -- ORDER + CLIENT (join podstawowe pola klienta do order)
             $stmt = $pdo->prepare("
                 SELECT
                     o.*,
-                    c.name  AS client_name,
-                    c.token AS client_token,
-                    c.email AS client_email,
-                    c.phone AS client_phone,
-                    c.master_client_id
+                    c.id    AS client__id,
+                    c.name  AS client__name,
+                    c.token AS client__token,
+                    c.email AS client__email,
+                    c.phone AS client__phone,
+                    c.master_client_id AS client__master_id
                 FROM orders o
                 LEFT JOIN clients c
                   ON c.id = o.client_id
@@ -137,7 +180,24 @@ class ViewRenderer
                 return null;
             }
 
-            $result = ['order' => $order];
+            // Zbuduj lekki obiekt klienta (engine-first; bez dociągania kolejnego SELECT jeśli nie trzeba)
+            $client = null;
+            if (!empty($order['client__id'])) {
+                $client = [
+                    'id'            => (int)$order['client__id'],
+                    'owner_id'      => $ownerId,
+                    'token'         => (string)($order['client__token'] ?? ''),
+                    'name'          => (string)($order['client__name']  ?? ''),
+                    'email'         => (string)($order['client__email'] ?? ''),
+                    'phone'         => (string)($order['client__phone'] ?? ''),
+                    'master_client' => $order['client__master_id'] ?? null,
+                ];
+            }
+
+            $result = [
+                'order'  => $order,
+                'client' => $client,
+            ];
 
             // -- GROUPS
             $groups = [];
@@ -234,7 +294,7 @@ class ViewRenderer
             $result['appliedPaid']  = $applied;
             $result['balance']      = $balance;
 
-            // -- SHIPPING (method label + id)
+            // -- SHIPPING (method label)
             $shippingId = (int)($order['shipping_id'] ?? 0);
             $result['shippingId'] = $shippingId;
 
@@ -256,26 +316,105 @@ class ViewRenderer
                 $result['shippingName'] = null;
             }
 
-            // -- ADDRESS (najpierw po group_id, fallback do order_id)
+            // -- ADDRESS (priorytet: orders.shipping_address_id → shipping_addresses(order_id) → client_addresses)
             $firstAddress = null;
-            if ($firstGroupId) {
+
+            // 1) orders.shipping_address_id
+            $orderShippingAddressId = (int)($order['shipping_address_id'] ?? 0);
+            if ($orderShippingAddressId > 0) {
                 try {
-                    $stmt = $pdo->prepare("SELECT * FROM shipping_addresses WHERE order_group_id = ? LIMIT 1");
-                    $stmt->execute([$firstGroupId]);
-                    $firstAddress = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    $stmt = $pdo->prepare("
+                        SELECT *
+                        FROM shipping_addresses
+                        WHERE id = :aid AND owner_id = :own
+                        LIMIT 1
+                    ");
+                    $stmt->execute([':aid' => $orderShippingAddressId, ':own' => $ownerId]);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    if ($row) $firstAddress = self::normalizeShippingAddr($row);
                 } catch (Throwable $e) {
-                    // tabela może nie mieć kolumny order_group_id – leć dalej
+                    logg('error', 'orders', 'shipping_addresses by id failed', ['err' => $e->getMessage()]);
                 }
             }
-            if (!$firstAddress) {
+
+            // 2) ostatni shipping_addresses po order_id
+            if ($firstAddress === null) {
                 try {
-                    $stmt = $pdo->prepare("SELECT * FROM shipping_addresses WHERE order_id = ? LIMIT 1");
-                    $stmt->execute([$orderId]);
-                    $firstAddress = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    $stmt = $pdo->prepare("
+                        SELECT *
+                        FROM shipping_addresses
+                        WHERE order_id = :oid AND owner_id = :own
+                        ORDER BY (last_used_at IS NULL) ASC, last_used_at DESC, id DESC
+
+                        LIMIT 1
+                    ");
+                    $stmt->execute([':oid' => $orderId, ':own' => $ownerId]);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    if ($row) {
+                        $firstAddress = self::normalizeShippingAddr($row);
+                        logg('info', 'orders', 'address_fallback_from_shipping_addresses', [
+                            'order_id' => $orderId, 'addr_id' => $row['id'] ?? null
+                        ]);
+                    }
                 } catch (Throwable $e) {
-                    // brak tabeli? trudno – zostaw null
+                    logg('error', 'orders', 'shipping_addresses by order_id failed', ['err' => $e->getMessage()]);
                 }
             }
+
+            // 3) client_addresses — najpierw default shipping, potem najnowszy shipping
+            if ($firstAddress === null && !empty($order['client__id'])) {
+                $clientId = (int)$order['client__id'];
+                try {
+                    // default
+                    $stmt = $pdo->prepare("
+                        SELECT id, owner_id, full_name, company, phone, email,
+                               country, city, postal_code, street, locker_code, label
+                        FROM client_addresses
+                        WHERE client_id = :cid AND owner_id = :own AND type='shipping' AND COALESCE(is_default,0)=1
+                        LIMIT 1
+                    ");
+                    $stmt->execute([':cid' => $clientId, ':own' => $ownerId]);
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    if ($row) $firstAddress = self::normalizeClientAddr($row);
+
+                    // najnowszy shipping jeśli brak defaultu
+                    if ($firstAddress === null) {
+                        $stmt = $pdo->prepare("
+                            SELECT id, owner_id, full_name, company, phone, email,
+                                   country, city, postal_code, street, locker_code, label
+                            FROM client_addresses
+                            WHERE client_id = :cid AND owner_id = :own AND type='shipping'
+                            ORDER BY (updated_at IS NULL) ASC, updated_at DESC, id DESC
+                            LIMIT 1
+                        ");
+                        $stmt->execute([':cid' => $clientId, ':own' => $ownerId]);
+                        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                        if ($row) {
+                            $firstAddress = self::normalizeClientAddr($row);
+                            logg('info', 'orders', 'address_fallback_from_client_addresses', [
+                                'order_id' => $orderId, 'client_id' => $clientId, 'addr_id' => $row['id'] ?? null
+                            ]);
+                        }
+                    }
+                } catch (Throwable $e) {
+                    logg('error', 'orders', 'client_addresses lookup failed', ['err' => $e->getMessage()]);
+                }
+            }
+
+            // 4) Soft fill: jeśli mamy klienta, uzupełnij brakujące email/phone/full_name
+            if ($firstAddress !== null && $client !== null) {
+                if (($firstAddress['full_name'] ?? '') === '' && ($client['name'] ?? '') !== '') {
+                    $firstAddress['full_name'] = (string)$client['name'];
+                }
+                if (($firstAddress['email'] ?? '') === '' && ($client['email'] ?? '') !== '') {
+                    $firstAddress['email'] = (string)$client['email'];
+                }
+                if (($firstAddress['phone'] ?? '') === '' && ($client['phone'] ?? '') !== '') {
+                    $firstAddress['phone'] = (string)$client['phone'];
+                }
+            }
+
+            // Zwróć do widoku
             $result['firstAddress'] = $firstAddress;
 
             // -- LISTA METOD (select w panelu)
@@ -311,7 +450,7 @@ class ViewRenderer
                 'order_id' => $orderId,
                 'owner_id' => $ownerId,
                 'groups'   => count($groups),
-                'items'    => array_sum(array_map('count', $itemsByGroup ?: [[]])),
+                'has_addr' => $firstAddress ? 1 : 0,
             ]);
 
             return $result;
@@ -332,7 +471,7 @@ class ViewRenderer
         $h     = fn(mixed $s) => self::h($s);
         $money = fn(mixed $n) => number_format(self::f($n, 0.0), 2, ',', ' ') . ' zł';
 
-        $status = self::s($r['order_status'] ?? ''); // bezpiecznie do stringa
+        $status = self::s($r['order_status'] ?? '');
         $NOWE   = __os_val('NOWE', 'nowe');
         $OPEN   = __os_val('OPEN_PACKAGE', 'otwarta_paczka');
         $OPEN_A = __os_val('OPEN_PACKAGE_ADD_PRODUCTS', 'otwarta_paczka:add_products');
@@ -415,7 +554,6 @@ class ViewRenderer
     {
         $norm = mb_strtolower(trim(self::s($status, 'nieopłacone')));
 
-        // Prosta normalizacja znanych wariantów
         $map = [
             'nieoplacona' => 'nieopłacone',
             'nieopłacona' => 'nieopłacone',
@@ -513,7 +651,6 @@ class ViewRenderer
     public static function renderPaymentModal(PDO $pdo, int $order_id, int $owner_id, string $csrf): void
     {
         try {
-            // ✅ usunięta duplikacja warunku na deleted_at
             $stmt = $pdo->prepare("
                 SELECT * FROM order_groups
                 WHERE order_id = ?

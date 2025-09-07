@@ -3,9 +3,8 @@
 // Czytelne jak wół na lodzie. 💪
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/log.php';
+
+require_once __DIR__ . '/../../../bootstrap.php';
 require_once __DIR__ . '/../../layout/top_panel.php';
 require_once __DIR__ . '/../../layout/layout_header.php';
 

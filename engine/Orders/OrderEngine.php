@@ -295,75 +295,108 @@ final class OrderEngine
      * Rozpoznaje code/sku/ean/twelve_nc/name (fallback SQL, jeśli brak ProductEngine).
      */
     public function addOrderItemByCode(
-        int $ownerId, int $orderId, int $groupId, string $code, float $qty,
-        string $source='panel', ?int $actorId=null
-    ): array {
-        $code = trim($code);
-        if ($code === '' || $qty <= 0) {
-            return ['ok'=>false, 'reason'=>'invalid_code_or_qty'];
-        }
+    int $ownerId, int $orderId, int $groupId, string $codeRaw, float $qty,
+    string $source='panel', ?int $actorId=null
+): array {
+    // 1) wyczyść i wyciągnij kod z wypowiedzi (np. "daj 001" -> "001")
+    $codeRaw = trim((string)$codeRaw);
+    if ($codeRaw === '' || $qty <= 0) {
+        return ['ok'=>false, 'reason'=>'invalid_code_or_qty'];
+    }
+    // bierz ostatni token składający się z [A-Za-z0-9._-], często to właśnie kod
+    if (preg_match('/([A-Za-z0-9._-]{1,128})$/u', $codeRaw, $m)) {
+        $code = $m[1];
+    } else {
+        $code = $codeRaw; // fallback
+    }
 
-        // spróbuj ProductEngine, jeśli istnieje
-        $p = null;
-        try {
-            if (\class_exists('\\Engine\\Orders\\ProductEngine')) {
-                $pe = new \Engine\Orders\ProductEngine($this->pdo);
-                if (\method_exists($pe,'findByAnyCode')) {
-                    $p = $pe->findByAnyCode($ownerId, $code);
-                }
+    // 2) spróbuj ProductEngine (jeśli jest)
+    $p = null;
+    try {
+        if (\class_exists('\\Engine\\Orders\\ProductEngine')) {
+            $pe = new \Engine\Orders\ProductEngine($this->pdo);
+            if (\method_exists($pe,'findByAnyCode')) {
+                $p = $pe->findByAnyCode($ownerId, $code);
             }
+        }
+    } catch (\Throwable $e) {
+        $this->safeLog('warning','orderengine','addByCode:ProductEngine_fail',['err'=>$e->getMessage()]);
+    }
+
+    // 3) SQL fallback — UWAGA: osobne placeholdery, brak bindowania LIMIT
+    if (!$p) {
+        try {
+            $sql = "
+                SELECT id, name, unit_price, vat_rate, sku
+                FROM products
+                WHERE owner_id = :oid
+                  AND deleted_at IS NULL
+                  AND (
+                        code      = :c1
+                     OR sku       = :c2
+                     OR ean       = :c3
+                     OR twelve_nc = :c4
+                     OR name      = :c5
+                  )
+                ORDER BY id DESC
+                LIMIT 1
+            ";
+            $st = $this->pdo->prepare($sql);
+            $st->bindValue(':oid', $ownerId, \PDO::PARAM_INT);
+            $st->bindValue(':c1',  $code,    \PDO::PARAM_STR);
+            $st->bindValue(':c2',  $code,    \PDO::PARAM_STR);
+            $st->bindValue(':c3',  $code,    \PDO::PARAM_STR);
+            $st->bindValue(':c4',  $code,    \PDO::PARAM_STR);
+            $st->bindValue(':c5',  $code,    \PDO::PARAM_STR);
+            $st->execute();
+            $p = $st->fetch(\PDO::FETCH_ASSOC) ?: null;
         } catch (\Throwable $e) {
-            $this->safeLog('warning','orderengine','addByCode:PE_fail',['err'=>$e->getMessage()]);
-        }
-
-        if (!$p) {
-            $st = $this->pdo->prepare("
-                SELECT id,name,unit_price,vat_rate,sku
-                  FROM products
-                 WHERE owner_id=:oid AND deleted_at IS NULL
-                   AND (code=:c OR sku=:c OR ean=:c OR twelve_nc=:c OR name=:c)
-                 LIMIT 1
-            ");
-            $st->execute([':oid'=>$ownerId, ':c'=>$code]);
-            $p = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-        }
-
-        if ($p) {
-            return $this->addOrderItem([
-                'owner_id'=>$ownerId,
-                'client_id'=>$this->getOrderClientId($orderId),
-                'product_id'=>(int)$p['id'],
-                'name'=>(string)$p['name'],
-                'qty'=>$qty,
-                'unit_price'=>(float)($p['unit_price'] ?? 0),
-                'vat_rate'=>(float)($p['vat_rate'] ?? 23),
-                'sku'=>(string)($p['sku'] ?? ''),
-                'source_type'=>'manual',
-                'channel'=>$source,
+            // nie blokuj — lecimy na pozycję „custom”
+            $this->safeLog('warning','orderengine','addByCode:SQL_fail',[
+                'code'=>$code,'err'=>$e->getMessage()
             ]);
         }
+    }
 
-        // fallback: pozycja custom 0 zł
-        $og = db_fetch_logged(
-            $this->pdo,
-            "SELECT o.owner_id, o.client_id FROM orders o WHERE o.id=:oid LIMIT 1",
-            [':oid'=>$orderId],
-            ['channel'=>'orders.items','event'=>'custom.lookup','order_id'=>$orderId]
-        );
-        if (!$og) return ['ok'=>false,'reason'=>'order_not_found'];
+    // 4) jeśli znaleziony produkt → dodaj z ceną; jeśli nie → „custom” (0 zł)
+    //    (pobieramy client_id z orders, żeby nie robić dodatkowych parametrów)
+    $og = db_fetch_logged(
+        $this->pdo,
+        "SELECT owner_id, client_id FROM orders WHERE id=:oid LIMIT 1",
+        [':oid'=>$orderId],
+        ['channel'=>'orders.items','event'=>'code.order_ctx','order_id'=>$orderId]
+    );
+    if (!$og) return ['ok'=>false,'reason'=>'order_not_found'];
 
+    if ($p) {
         return $this->addOrderItem([
             'owner_id'=>(int)$og['owner_id'],
             'client_id'=>(int)$og['client_id'],
-            'name'=>$code,
+            'product_id'=>(int)$p['id'],
+            'name'=>(string)$p['name'],
             'qty'=>$qty,
-            'unit_price'=>0,
-            'vat_rate'=>23,
-            'sku'=>'',
+            'unit_price'=>(float)($p['unit_price'] ?? 0),
+            'vat_rate'=>(float)($p['vat_rate'] ?? 23),
+            'sku'=>(string)($p['sku'] ?? ''),
             'source_type'=>'manual',
             'channel'=>$source,
         ]);
     }
+
+    // „custom” linia na bazie kodu/komendy (np. "001")
+    return $this->addOrderItem([
+        'owner_id'=>(int)$og['owner_id'],
+        'client_id'=>(int)$og['client_id'],
+        'name'=>$code,
+        'qty'=>$qty,
+        'unit_price'=>0,
+        'vat_rate'=>23,
+        'sku'=>'',
+        'source_type'=>'manual',
+        'channel'=>$source,
+    ]);
+}
+
 
     /* ======================================================================
      * UPDATE / REMOVE / TOGGLE — (jak w Twojej wersji) — pozostawione bez zmian
@@ -986,4 +1019,42 @@ final class OrderEngine
     }
 
     /* ====================================================================== */
+	
+	/**
+ * Backfill: uzupełnienie dla gałązek bez tej metody.
+ * Ustawia orders.source_channel tylko jeśli kolumna istnieje
+ * i dotąd było NULL lub 'shop' (nie nadpisujemy kanałów zewnętrznych).
+ */
+private function updateOrderSourceChannel(int $orderId, string $channel): void
+{
+    try {
+        // jeśli schemat nie ma kolumny — po prostu wyjdź
+        if (!$this->columnExists('orders', 'source_channel')) {
+            return;
+        }
+
+        db_exec_logged(
+            $this->pdo,
+            "UPDATE orders
+               SET source_channel = :ch
+             WHERE id = :id
+               AND (source_channel IS NULL OR source_channel = 'shop')",
+            [':ch' => $channel, ':id' => $orderId],
+            ['channel'=>'orders.source', 'event'=>'order.source_channel.update', 'order_id'=>$orderId]
+        );
+
+        $this->safeLog('debug', 'orderengine', 'source_channel_updated', [
+            'order_id' => $orderId,
+            'channel'  => $channel
+        ]);
+    } catch (\Throwable $e) {
+        // miękko — to nie może wywracać całej operacji
+        $this->safeLog('warning', 'orderengine', 'source_channel_update_failed', [
+            'order_id' => $orderId,
+            'channel'  => $channel,
+            'error'    => $e->getMessage(),
+        ]);
+    }
+}
+
 }
